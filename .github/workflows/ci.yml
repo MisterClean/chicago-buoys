@@ -63,7 +63,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          readonly maximum_bytes=250000000
+          readonly maximum_bytes=100000000
           image_bytes="$(docker image inspect chicago-lake-pulse:ci --format '{{.Size}}')"
           printf 'Runtime image size: %s bytes\n' "$image_bytes"
           if ((image_bytes > maximum_bytes)); then
@@ -74,4 +74,8 @@ jobs:
       - name: Exercise compiled runtime modules
         run: >-
           docker run --rm --network none --entrypoint node chicago-lake-pulse:ci
-          --input-type=module --eval "await import('./dist/src/cli.js')"
+          --input-type=module --eval
+          "if (!process.versions.node.startsWith('24.')) throw new Error('Node 24 is required');
+          await import('node:sqlite');
+          new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago' }).format(new Date());
+          await import('./dist/src/cli.js')"

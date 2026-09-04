@@ -38,6 +38,8 @@ The example configuration uses `mode: shadow`, disables its publisher, and disab
 
 The Chicago camera owner currently states that its images and videos may not be redistributed without express prior permission. Do not enable the camera adapter until that permission has been obtained and recorded.
 
+Event posts also default to `posting.eventsEnabled: false`. Keep them disabled until their thresholds have been backtested against a complete deployment season; ordinary briefs can be launched independently.
+
 ## Requirements
 
 - Node.js 24 LTS
@@ -94,6 +96,7 @@ publishers:
     enabled: false
     handleEnv: LAKE_PULSE_BLUESKY_HANDLE
     appPasswordEnv: LAKE_PULSE_BLUESKY_APP_PASSWORD
+    expectedDidEnv: LAKE_PULSE_BLUESKY_DID
     sessionPath: ./var/bluesky-session.json
 ```
 

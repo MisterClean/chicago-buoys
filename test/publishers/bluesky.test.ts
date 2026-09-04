@@ -27,10 +27,12 @@ const fixedDate = new Date("2026-09-04T15:00:00.000Z");
 
 class FakeClient implements BlueskyClientPort {
   public readonly did = "did:plc:lake-pulse";
+  public readonly handle = "lake-pulse.test";
   public readonly dispatchUrl = new URL("https://pds.example.com");
   public readonly authRequests: ServiceAuthRequest[] = [];
   public readonly blobUploads: Array<{ bytes: Uint8Array; mimeType: string }> = [];
   public readonly posts: Array<{ record: AppBskyFeedPost.Record; rkey: string }> = [];
+  public readonly records = new Map<string, { uri: string; cid: string }>();
   public preparedText: PreparedText | undefined;
 
   public prepareText(text: string): Promise<PreparedText> {
@@ -53,12 +55,18 @@ class FakeClient implements BlueskyClientPort {
     return Promise.resolve(`token-${this.authRequests.length}`);
   }
 
+  public getPost(rkey: string): Promise<{ uri: string; cid: string } | undefined> {
+    return Promise.resolve(this.records.get(rkey));
+  }
+
   public createPost(
     record: AppBskyFeedPost.Record,
     rkey: string,
   ): Promise<{ uri: string; cid: string }> {
     this.posts.push({ record, rkey });
-    return Promise.resolve({ cid: "post-cid", uri: `at://${this.did}/app.bsky.feed.post/${rkey}` });
+    const result = { cid: "post-cid", uri: `at://${this.did}/app.bsky.feed.post/${rkey}` };
+    this.records.set(rkey, result);
+    return Promise.resolve(result);
   }
 }
 
@@ -70,7 +78,7 @@ class FakeVideoService implements VideoServicePort {
     token: string;
   }> = [];
   public finishTokens: string[] = [];
-  public jobStatuses: AppBskyVideoDefs.JobStatus[] = [];
+  public jobStatuses: Array<AppBskyVideoDefs.JobStatus | Error> = [];
   public limits: VideoUploadLimits = {
     canUpload: true,
     remainingDailyBytes: 1_000,
@@ -132,6 +140,9 @@ class FakeVideoService implements VideoServicePort {
     if (next === undefined) {
       throw new Error("missing fake job status");
     }
+    if (next instanceof Error) {
+      return Promise.reject(next);
+    }
     return Promise.resolve(next);
   }
 }
@@ -148,6 +159,7 @@ function publisher(client: FakeClient, videoService: VideoServicePort = new Fake
       uploadRecoveryAttempts: 2,
       videoPollAttempts: 2,
       videoPollIntervalMs: 1,
+      videoStatusRetryAttempts: 3,
     },
     {
       clientFactory: () => Promise.resolve(client),
@@ -206,6 +218,89 @@ describe("BlueskyPublisher", () => {
     });
     expect(client.posts[0]?.rkey).toMatch(/^[a-f0-9]{64}$/u);
     expect(receipt).toMatchObject({ cid: "post-cid", publisherId: "bluesky" });
+  });
+
+  it("returns an existing deterministic record before uploading media", async () => {
+    const client = new FakeClient();
+    const videoService = new FakeVideoService();
+    const instance = publisher(client, videoService);
+    const cameraPost = post({
+      alt: "Lake surface video.",
+      bytes: mp4Bytes(),
+      kind: "video",
+      mimeType: "video/mp4",
+    });
+    // Seed the deterministic record with the same idempotency key, as if an
+    // earlier worker committed before its local database update completed.
+    await instance.publish(post());
+    client.posts.length = 0;
+
+    const receipt = await instance.publish(cameraPost);
+
+    expect(receipt.cid).toBe("post-cid");
+    expect(videoService.parts).toHaveLength(0);
+    expect(client.posts).toHaveLength(0);
+  });
+
+  it("reconciles a committed video post after its putRecord response is lost", async () => {
+    class AmbiguousClient extends FakeClient {
+      public override createPost(
+        record: AppBskyFeedPost.Record,
+        rkey: string,
+      ): Promise<{ uri: string; cid: string }> {
+        super.createPost(record, rkey);
+        return Promise.reject(new TypeError("response interrupted"));
+      }
+    }
+    const client = new AmbiguousClient();
+    const videoService = new FakeVideoService();
+    videoService.jobStatuses.push({
+      blob: videoBlob,
+      did: client.did,
+      jobId: "processing-job",
+      state: "JOB_STATE_COMPLETED",
+    });
+    const instance = publisher(client, videoService);
+    const cameraPost = post({
+      alt: "Lake surface video.",
+      bytes: mp4Bytes(),
+      kind: "video",
+      mimeType: "video/mp4",
+    });
+
+    const receipt = await instance.publish(cameraPost);
+    const retryReceipt = await instance.publish(cameraPost);
+
+    expect(receipt.cid).toBe("post-cid");
+    expect(retryReceipt.cid).toBe("post-cid");
+    expect(videoService.parts.map((part) => part.partNumber)).toEqual([1, 2, 3]);
+    expect(client.posts).toHaveLength(1);
+  });
+
+  it("fails closed on an authenticated handle mismatch before any operation", async () => {
+    const client = new FakeClient();
+    Object.defineProperty(client, "handle", { value: "different-account.test" });
+
+    await expect(publisher(client).publish(post())).rejects.toThrow(/configured handle/u);
+    expect(client.posts).toHaveLength(0);
+  });
+
+  it("fails closed on an authenticated DID mismatch", async () => {
+    const client = new FakeClient();
+    const instance = new BlueskyPublisher(
+      {
+        appPassword: "never-used",
+        expectedDid: "did:plc:expected-account",
+        handle: client.handle,
+        id: "bluesky",
+        serviceUrl: "https://bsky.social",
+        sessionPath: "/never/used/session.json",
+      },
+      { clientFactory: () => Promise.resolve(client) },
+    );
+
+    await expect(instance.publish(post())).rejects.toThrow(/configured DID/u);
+    expect(client.posts).toHaveLength(0);
   });
 
   it("rejects overlong text before uploading media", async () => {
@@ -349,12 +444,39 @@ describe("BlueskyPublisher", () => {
     ).rejects.toThrow(/codec rejected/u);
     expect(client.posts).toHaveLength(0);
   });
+
+  it("retries transient video job-status failures without restarting the upload", async () => {
+    const client = new FakeClient();
+    const videoService = new FakeVideoService();
+    videoService.jobStatuses.push(
+      new TypeError("temporary network failure"),
+      {
+        blob: videoBlob,
+        did: client.did,
+        jobId: "processing-job",
+        state: "JOB_STATE_COMPLETED",
+      },
+    );
+
+    await publisher(client, videoService).publish(
+      post({
+        alt: "Lake surface video.",
+        bytes: mp4Bytes(),
+        kind: "video",
+        mimeType: "video/mp4",
+      }),
+    );
+
+    expect(videoService.parts.map((part) => part.partNumber)).toEqual([1, 2, 3]);
+    expect(client.posts).toHaveLength(1);
+  });
 });
 
 describe("createBlueskyPublisher", () => {
   const config = {
     appPasswordEnv: "BOT_PASSWORD",
     enabled: true,
+    expectedDidEnv: "BOT_DID",
     handleEnv: "BOT_HANDLE",
     id: "bluesky",
     kind: "bluesky" as const,
@@ -366,13 +488,26 @@ describe("createBlueskyPublisher", () => {
     const result = createBlueskyPublisher(config, {
       BOT_HANDLE: "lake-pulse.test",
       BOT_PASSWORD: "app-password",
+      BOT_DID: "did:plc:lake-pulse",
     });
     expect(result.id).toBe("bluesky");
   });
 
   it("reports a missing variable by name without including another secret", () => {
     expect(() =>
-      createBlueskyPublisher(config, { BOT_HANDLE: "lake-pulse.test" }),
+      createBlueskyPublisher(config, {
+        BOT_DID: "did:plc:lake-pulse",
+        BOT_HANDLE: "lake-pulse.test",
+      }),
     ).toThrow("BOT_PASSWORD");
+  });
+
+  it("requires the configured account DID without revealing its value", () => {
+    expect(() =>
+      createBlueskyPublisher(config, {
+        BOT_HANDLE: "lake-pulse.test",
+        BOT_PASSWORD: "app-password",
+      }),
+    ).toThrow("BOT_DID");
   });
 });

@@ -13,6 +13,7 @@ type CountRow = {
 };
 
 const MAX_PUBLICATION_ATTEMPTS = 3;
+const PUBLICATION_RECLAIM_AFTER_MS = 30 * 60_000;
 
 type CameraClipRow = {
   discovered_at: string;
@@ -44,7 +45,10 @@ export type RunRecord = {
 export class LakePulseDatabase {
   private readonly database: DatabaseSync;
 
-  public constructor(databasePath: string) {
+  public constructor(
+    databasePath: string,
+    private readonly now: () => Date = () => new Date(),
+  ) {
     const absolutePath = path.resolve(databasePath);
     mkdirSync(path.dirname(absolutePath), { recursive: true });
     this.database = new DatabaseSync(absolutePath, {
@@ -69,14 +73,14 @@ export class LakePulseDatabase {
   public startRun(command: string): number {
     const result = this.database
       .prepare("INSERT INTO runs(command, started_at, status) VALUES (?, ?, 'running')")
-      .run(command, new Date().toISOString());
+      .run(command, this.now().toISOString());
     return Number(result.lastInsertRowid);
   }
 
   public finishRun(runId: number, status: "succeeded" | "failed", error?: string): void {
     this.database
       .prepare("UPDATE runs SET finished_at = ?, status = ?, error = ? WHERE id = ?")
-      .run(new Date().toISOString(), status, error?.slice(0, 2_000) ?? null, runId);
+      .run(this.now().toISOString(), status, error?.slice(0, 2_000) ?? null, runId);
   }
 
   public getLatestRun(): RunRecord | undefined {
@@ -199,7 +203,11 @@ export class LakePulseDatabase {
   }
 
   public reservePublication(post: CanonicalPost, publisherId: string, status: "pending" | "shadow"): boolean {
-    const timestamp = new Date().toISOString();
+    const timestampDate = this.now();
+    const timestamp = timestampDate.toISOString();
+    const reclaimBefore = new Date(
+      timestampDate.getTime() - PUBLICATION_RECLAIM_AFTER_MS,
+    ).toISOString();
     const result = this.database
       .prepare(`
         INSERT INTO publication_intents (
@@ -217,7 +225,13 @@ export class LakePulseDatabase {
           payload_json = excluded.payload_json,
           error = NULL,
           updated_at = excluded.updated_at
-        WHERE publication_intents.status = 'failed'
+        WHERE (
+          publication_intents.status = 'failed'
+          OR (
+            publication_intents.status IN ('pending', 'publishing')
+            AND publication_intents.updated_at <= ?
+          )
+        )
           AND publication_intents.attempt_count < ${MAX_PUBLICATION_ATTEMPTS}
       `)
       .run(
@@ -229,6 +243,7 @@ export class LakePulseDatabase {
         JSON.stringify(post, (_key, value: unknown) => (value instanceof Uint8Array ? "[binary]" : value)),
         timestamp,
         timestamp,
+        reclaimBefore,
       );
     return result.changes === 1;
   }
@@ -240,7 +255,7 @@ export class LakePulseDatabase {
         SET status = 'publishing', attempt_count = attempt_count + 1, updated_at = ?
         WHERE idempotency_key = ? AND publisher_id = ? AND status = 'pending'
       `)
-      .run(new Date().toISOString(), idempotencyKey, publisherId);
+      .run(this.now().toISOString(), idempotencyKey, publisherId);
   }
 
   public markPublicationComplete(
@@ -257,7 +272,7 @@ export class LakePulseDatabase {
         receipt.uri,
         receipt.cid,
         receipt.publishedAt,
-        new Date().toISOString(),
+        this.now().toISOString(),
         idempotencyKey,
         receipt.publisherId,
       );
@@ -270,7 +285,7 @@ export class LakePulseDatabase {
         SET status = 'failed', error = ?, updated_at = ?
         WHERE idempotency_key = ? AND publisher_id = ?
       `)
-      .run(message.slice(0, 2_000), new Date().toISOString(), idempotencyKey, publisherId);
+      .run(message.slice(0, 2_000), this.now().toISOString(), idempotencyKey, publisherId);
   }
 
   public countPublicationsSince(stationKey: string, since: Date, kind?: string): number {

@@ -61,7 +61,7 @@ sudo install -m 0755 -o root -g root deploy/bin/check-chicago-lake-pulse /usr/lo
 sudo install -m 0644 -o root -g root deploy/systemd/* /etc/systemd/system/
 ```
 
-Edit the installed config to use the `/state` paths shown above. Fill the Bluesky handle and app password only in `/etc/chicago-lake-pulse.env`; do not put them in the repository, image, unit files, shell history, or GitHub Actions variables.
+Edit the installed config to use the `/state` paths shown above. Fill the Bluesky handle, account DID, and app password only in `/etc/chicago-lake-pulse.env`; do not put them in the repository, image, unit files, shell history, or GitHub Actions variables. The publisher checks both the handle and immutable DID before uploading or writing anything.
 
 Validate and load the unit files:
 
@@ -95,7 +95,7 @@ The current camera clip is well below the recommended 25 MB ceiling. The current
 
 ## Image lifecycle
 
-`.github/workflows/ci.yml` checks pull requests, compiles and tests with Node 24, builds the runtime image, exercises the CLI, and rejects an unpacked image larger than 250 MB.
+`.github/workflows/ci.yml` checks pull requests, compiles and tests with Node 24, builds the bundled runtime image, exercises the CLI, and rejects an unpacked image larger than 100 MB.
 
 `.github/workflows/publish.yml` runs after a push to `main`. It repeats the checks and publishes only an immutable tag of the form:
 
@@ -146,7 +146,7 @@ Before going live:
 1. Confirm scheduled text and timestamps against the source dashboards.
 2. Confirm stale, partial, duplicate, and corrected rows behave correctly.
 3. Confirm camera publishing remains disabled.
-4. Put a valid app password in the host env file.
+4. Put the bot handle, immutable DID, and a valid app password in the host env file.
 5. Change the publisher's `enabled` value to true and `app.mode` to `live` in the host config.
 6. Start one manual service cycle and inspect its receipt before relying on the timer.
 

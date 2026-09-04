@@ -17,6 +17,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "bundle": "esbuild src/cli.ts --bundle --platform=node --target=node24 --format=esm --outfile=dist/src/cli.js --sourcemap=external --sources-content=false --legal-comments=external --minify-syntax --minify-whitespace --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
     "dev": "tsx src/cli.ts",
     "start": "node dist/src/cli.js",
     "test": "vitest run",
@@ -31,6 +32,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "esbuild": "0.28.2",
     "tsx": "^4.20.6",
     "typescript": "~5.9.3",
     "vitest": "^5.0.0"

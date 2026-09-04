@@ -102,6 +102,9 @@ function createPublishers(config: AppConfig, environment: NodeJS.ProcessEnv): Pu
   if (config.app.mode === "shadow") {
     return [];
   }
+  if (enabled.length === 0) {
+    throw new Error("Live mode requires at least one enabled publisher");
+  }
   return enabled.map((publisher) =>
     createBlueskyPublisher(
       {
@@ -125,7 +128,13 @@ async function main(): Promise<void> {
     ...(options.stationKey === undefined ? {} : { stationKey: options.stationKey }),
   };
   try {
-    const publishers = createPublishers(config, process.env);
+    const publishers =
+      options.command === "tick" ||
+      options.command === "brief" ||
+      options.command === "camera" ||
+      options.command === "weekly"
+        ? createPublishers(config, process.env)
+        : [];
     switch (options.command) {
       case "migrate":
         logger.info("database_migration_complete");

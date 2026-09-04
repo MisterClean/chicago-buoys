@@ -31,12 +31,14 @@ export type BlueskyPublisherOptions = {
   id: string;
   serviceUrl: string;
   handle: string;
+  expectedDid?: string;
   appPassword: string;
   sessionPath: string;
   videoServiceUrl?: string;
   videoServiceDid?: string;
   videoPollIntervalMs?: number;
   videoPollAttempts?: number;
+  videoStatusRetryAttempts?: number;
   partRetryAttempts?: number;
   uploadRecoveryAttempts?: number;
 };
@@ -56,10 +58,12 @@ export type ServiceAuthRequest = {
 
 export interface BlueskyClientPort {
   readonly did: string;
+  readonly handle: string;
   readonly dispatchUrl: URL;
   prepareText(text: string): Promise<PreparedText>;
   uploadBlob(bytes: Uint8Array, mimeType: string): Promise<BlobRef>;
   getServiceAuth(request: ServiceAuthRequest): Promise<string>;
+  getPost(rkey: string): Promise<{ uri: string; cid: string } | undefined>;
   createPost(record: AppBskyFeedPost.Record, rkey: string): Promise<{ uri: string; cid: string }>;
 }
 
@@ -215,11 +219,12 @@ function isAuthenticationError(error: unknown): boolean {
   return statusCode(error) === 401 || errorCode(error) === "AuthRequired";
 }
 
-function isRetryablePartError(error: unknown): boolean {
+function isTransientServiceError(error: unknown): boolean {
   const status = statusCode(error);
   return (
     error instanceof TypeError ||
     status === 1 ||
+    status === 408 ||
     status === 429 ||
     (status !== undefined && status >= 500) ||
     errorCode(error) === "ServiceOverloaded"
@@ -251,6 +256,14 @@ class AtprotoBlueskyClient implements BlueskyClientPort {
     return did;
   }
 
+  public get handle(): string {
+    const handle = this.session.session?.handle;
+    if (handle === undefined) {
+      throw new Error("Bluesky client session has no handle");
+    }
+    return handle;
+  }
+
   public get dispatchUrl(): URL {
     return this.session.dispatchUrl;
   }
@@ -276,6 +289,25 @@ class AtprotoBlueskyClient implements BlueskyClientPort {
     return response.data.token;
   }
 
+  public async getPost(rkey: string): Promise<{ uri: string; cid: string } | undefined> {
+    try {
+      const response = await this.agent.com.atproto.repo.getRecord({
+        collection: "app.bsky.feed.post",
+        repo: this.did,
+        rkey,
+      });
+      if (response.data.cid === undefined) {
+        throw new Error("Existing Bluesky post record did not return a CID");
+      }
+      return { cid: response.data.cid, uri: response.data.uri };
+    } catch (error) {
+      if (errorCode(error) === "RecordNotFound") {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
   public createPost(
     record: AppBskyFeedPost.Record,
     rkey: string,
@@ -286,6 +318,7 @@ class AtprotoBlueskyClient implements BlueskyClientPort {
         record,
         repo: this.did,
         rkey,
+        swapRecord: null,
         validate: true,
       })
       .then((response) => response.data);
@@ -416,12 +449,18 @@ export class BlueskyPublisher implements Publisher {
 
     positiveInteger(options.videoPollIntervalMs ?? 2_000, "videoPollIntervalMs");
     positiveInteger(options.videoPollAttempts ?? 150, "videoPollAttempts");
+    positiveInteger(options.videoStatusRetryAttempts ?? 3, "videoStatusRetryAttempts");
     positiveInteger(options.partRetryAttempts ?? 3, "partRetryAttempts");
     positiveInteger(options.uploadRecoveryAttempts ?? 5, "uploadRecoveryAttempts");
   }
 
   public async publish(post: CanonicalPost): Promise<PublishReceipt> {
     const client = await this.client();
+    const rkey = recordKey(post.idempotencyKey);
+    const existing = await client.getPost(rkey);
+    if (existing !== undefined) {
+      return this.receipt(existing);
+    }
     const preparedText = await client.prepareText(post.text);
     this.assertPostText(preparedText);
     if (post.langs.length > 3) {
@@ -440,19 +479,62 @@ export class BlueskyPublisher implements Publisher {
       post.media === undefined
         ? baseRecord
         : await this.attachMedia(baseRecord, post.media, post.idempotencyKey, client);
-    const response = await client.createPost(record, recordKey(post.idempotencyKey));
+    let response: { uri: string; cid: string };
+    try {
+      response = await client.createPost(record, rkey);
+    } catch (error) {
+      // A request may have committed even if its response was lost. The null
+      // swap guard also turns a concurrent writer into a safe reconciliation.
+      const committed = await this.reconcilePost(client, rkey, error);
+      if (committed === undefined) {
+        throw error;
+      }
+      response = committed;
+    }
 
-    return {
-      cid: response.cid,
-      publishedAt: this.now().toISOString(),
-      publisherId: this.id,
-      uri: response.uri,
-    };
+    return this.receipt(response);
   }
 
   private client(): Promise<BlueskyClientPort> {
-    this.clientPromise ??= this.clientFactory(this.options);
+    this.clientPromise ??= this.clientFactory(this.options).then((client) => {
+      const expectedHandle = this.normalizeHandle(this.options.handle);
+      if (this.normalizeHandle(client.handle) !== expectedHandle) {
+        throw new Error("Authenticated Bluesky account does not match the configured handle");
+      }
+      if (this.options.expectedDid !== undefined && client.did !== this.options.expectedDid) {
+        throw new Error("Authenticated Bluesky account does not match the configured DID");
+      }
+      return client;
+    });
     return this.clientPromise;
+  }
+
+  private normalizeHandle(handle: string): string {
+    return handle.trim().replace(/^@/u, "").toLowerCase();
+  }
+
+  private receipt(record: { uri: string; cid: string }): PublishReceipt {
+    return {
+      cid: record.cid,
+      publishedAt: this.now().toISOString(),
+      publisherId: this.id,
+      uri: record.uri,
+    };
+  }
+
+  private async reconcilePost(
+    client: BlueskyClientPort,
+    rkey: string,
+    writeError: unknown,
+  ): Promise<{ uri: string; cid: string } | undefined> {
+    try {
+      return await client.getPost(rkey);
+    } catch (reconciliationError) {
+      throw new AggregateError(
+        [writeError, reconciliationError],
+        "Bluesky post outcome is uncertain and record reconciliation failed",
+      );
+    }
   }
 
   private assertPostText(text: PreparedText): void {
@@ -652,7 +734,7 @@ export class BlueskyPublisher implements Publisher {
         lastError = error;
         if (
           attempt === attempts ||
-          (!isAuthenticationError(error) && !isRetryablePartError(error))
+          (!isAuthenticationError(error) && !isTransientServiceError(error))
         ) {
           throw error;
         }
@@ -759,10 +841,27 @@ export class BlueskyPublisher implements Publisher {
       }
       if (attempt < attempts) {
         await this.sleep(interval);
-        status = await this.videoService.getJobStatus(jobId);
+        status = await this.getVideoJobStatusWithRetry(jobId);
       }
     }
     throw new Error(`Bluesky video processing did not finish after ${attempts} checks`);
+  }
+
+  private async getVideoJobStatusWithRetry(jobId: string): Promise<AppBskyVideoDefs.JobStatus> {
+    const attempts = this.options.videoStatusRetryAttempts ?? 3;
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await this.videoService.getJobStatus(jobId);
+      } catch (error) {
+        lastError = error;
+        if (attempt === attempts || !isTransientServiceError(error)) {
+          throw error;
+        }
+        await this.sleep(Math.min(500 * 2 ** (attempt - 1), 4_000));
+      }
+    }
+    throw lastError;
   }
 }
 
@@ -781,6 +880,11 @@ export function createBlueskyPublisher(
       `Missing Bluesky app-password environment variable ${config.appPasswordEnv}`,
     );
   }
+  const expectedDid =
+    config.expectedDidEnv === undefined ? undefined : environment[config.expectedDidEnv];
+  if (config.expectedDidEnv !== undefined && (expectedDid === undefined || expectedDid.length === 0)) {
+    throw new Error(`Missing Bluesky DID environment variable ${config.expectedDidEnv}`);
+  }
   return new BlueskyPublisher(
     {
       appPassword,
@@ -788,6 +892,7 @@ export function createBlueskyPublisher(
       id: config.id,
       serviceUrl: config.serviceUrl,
       sessionPath: config.sessionPath,
+      ...(expectedDid === undefined ? {} : { expectedDid }),
     },
     dependencies,
   );

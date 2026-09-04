@@ -6,6 +6,7 @@ app:
 posting:
   ordinaryDailyMaximum: 4
   eventDailyMaximum: 6
+  eventsEnabled: false
   freshnessMinutes: 60
   delayedMinutes: 20
 
@@ -16,6 +17,7 @@ publishers:
     serviceUrl: https://bsky.social
     handleEnv: LAKE_PULSE_BLUESKY_HANDLE
     appPasswordEnv: LAKE_PULSE_BLUESKY_APP_PASSWORD
+    expectedDidEnv: LAKE_PULSE_BLUESKY_DID
     sessionPath: ./var/bluesky-session.json
 
 stations:

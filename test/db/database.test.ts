@@ -8,10 +8,10 @@ import type { CanonicalPost, NormalizedObservation } from "../../src/domain/type
 
 const temporaryDirectories: string[] = [];
 
-function openDatabase(): LakePulseDatabase {
+function openDatabase(now?: () => Date): LakePulseDatabase {
   const directory = mkdtempSync(path.join(tmpdir(), "lake-pulse-test-"));
   temporaryDirectories.push(directory);
-  return new LakePulseDatabase(path.join(directory, "test.sqlite"));
+  return new LakePulseDatabase(path.join(directory, "test.sqlite"), now);
 }
 
 function observation(observedAt = "2026-09-04T12:00:00.000Z"): NormalizedObservation {
@@ -88,6 +88,18 @@ describe("LakePulseDatabase", () => {
     expect(
       database.countPublicationKindPrefixSince("test", new Date(now.getTime() - 60_000), "brief:"),
     ).toBe(1);
+    database.close();
+  });
+
+  it("reclaims an interrupted publication after its lease expires", () => {
+    let clock = new Date("2026-09-04T12:00:00.000Z");
+    const database = openDatabase(() => clock);
+    expect(database.reservePublication(post(), "bluesky", "pending")).toBe(true);
+    database.markPublicationStarted(post().idempotencyKey, "bluesky");
+    expect(database.reservePublication(post(), "bluesky", "pending")).toBe(false);
+
+    clock = new Date(clock.getTime() + 31 * 60_000);
+    expect(database.reservePublication(post(), "bluesky", "pending")).toBe(true);
     database.close();
   });
 

@@ -35,13 +35,31 @@ function buildEvent(
   };
 }
 
-function temperatureSpread(observation: NormalizedObservation): number | undefined {
-  const valid = observation.profile.filter((point) => isEventQuality(point.quality));
-  if (valid.length < 2) {
+function comparableTemperatureSpreads(
+  current: NormalizedObservation,
+  previous: NormalizedObservation,
+): { current: number; previous: number } | undefined {
+  const currentProfile = current.profile
+    .filter((point) => isEventQuality(point.quality))
+    .sort((left, right) => left.depthM - right.depthM);
+  const previousProfile = previous.profile
+    .filter((point) => isEventQuality(point.quality))
+    .sort((left, right) => left.depthM - right.depthM);
+  if (
+    currentProfile.length < 2 ||
+    currentProfile.length !== previousProfile.length ||
+    currentProfile.some(
+      (point, index) => Math.abs(point.depthM - (previousProfile[index]?.depthM ?? Infinity)) > 0.05,
+    )
+  ) {
     return undefined;
   }
-  const temperatures = valid.map((point) => point.temperatureC);
-  return Math.max(...temperatures) - Math.min(...temperatures);
+  const currentTemperatures = currentProfile.map((point) => point.temperatureC);
+  const previousTemperatures = previousProfile.map((point) => point.temperatureC);
+  return {
+    current: Math.max(...currentTemperatures) - Math.min(...currentTemperatures),
+    previous: Math.max(...previousTemperatures) - Math.min(...previousTemperatures),
+  };
 }
 
 export function detectEvents(station: StationConfig, inputs: EventInputs): CanonicalPost[] {
@@ -111,21 +129,19 @@ export function detectEvents(station: StationConfig, inputs: EventInputs): Canon
   }
 
   if (yesterday !== undefined) {
-    const currentSpread = temperatureSpread(current);
-    const previousSpread = temperatureSpread(yesterday);
+    const spreads = comparableTemperatureSpreads(current, yesterday);
     if (
-      currentSpread !== undefined &&
-      previousSpread !== undefined &&
-      previousSpread >= 5 / 1.8 &&
-      currentSpread <= 1.5 / 1.8 &&
-      currentSpread <= previousSpread / 2
+      spreads !== undefined &&
+      spreads.previous >= 5 / 1.8 &&
+      spreads.current <= 1.5 / 1.8 &&
+      spreads.current <= spreads.previous / 2
     ) {
       events.push(
         buildEvent(
           station,
           current,
           "mixing",
-          `The lake removed a layer: its measured temperature spread narrowed from ${(previousSpread * 1.8).toFixed(1)}°F yesterday to ${(currentSpread * 1.8).toFixed(1)}°F now.`,
+          `The lake removed a layer: its measured temperature spread narrowed from ${(spreads.previous * 1.8).toFixed(1)}°F yesterday to ${(spreads.current * 1.8).toFixed(1)}°F now.`,
         ),
       );
     }

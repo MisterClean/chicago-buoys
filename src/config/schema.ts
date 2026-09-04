@@ -60,6 +60,7 @@ const publisherSchema = z.object({
   serviceUrl: url.default("https://bsky.social"),
   handleEnv: envName,
   appPasswordEnv: envName,
+  expectedDidEnv: envName.optional(),
   sessionPath: z.string().min(1),
 });
 
@@ -72,6 +73,7 @@ export const configSchema = z.object({
   posting: z.object({
     ordinaryDailyMaximum: z.int().min(1).max(20).default(4),
     eventDailyMaximum: z.int().min(1).max(30).default(6),
+    eventsEnabled: z.boolean().default(false),
     freshnessMinutes: z.int().positive().default(60),
     delayedMinutes: z.int().positive().default(20),
   }),

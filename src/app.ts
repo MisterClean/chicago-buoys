@@ -196,7 +196,7 @@ async function evaluateObservationPosts(
     );
   }
 
-  if (forcedLane === undefined && state === "fresh") {
+  if (forcedLane === undefined && state === "fresh" && config.posting.eventsEnabled) {
     const observedAt = new Date(current.observedAt);
     const ninetyMinutesAgo = database.getAcceptableObservationAtOrBefore(
       station.key,
