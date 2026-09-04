@@ -245,6 +245,33 @@ describe("BlueskyPublisher", () => {
     expect(client.posts).toHaveLength(0);
   });
 
+  it("adds a labeled link facet using UTF-8 byte offsets", async () => {
+    const client = new FakeClient();
+    const linkedPost: CanonicalPost = {
+      ...post(),
+      links: [{ label: "View data", uri: "https://example.com/station" }],
+      text: "🌊 Conditions\nView data",
+    };
+
+    await publisher(client).publish(linkedPost);
+
+    const prefixBytes = new TextEncoder().encode("🌊 Conditions\n").byteLength;
+    expect(client.posts[0]?.record.facets).toEqual([
+      {
+        features: [
+          {
+            $type: "app.bsky.richtext.facet#link",
+            uri: "https://example.com/station",
+          },
+        ],
+        index: {
+          byteEnd: prefixBytes + new TextEncoder().encode("View data").byteLength,
+          byteStart: prefixBytes,
+        },
+      },
+    ]);
+  });
+
   it("reconciles a committed video post after its putRecord response is lost", async () => {
     class AmbiguousClient extends FakeClient {
       public override createPost(

@@ -77,6 +77,10 @@ export type CanonicalPost = {
   langs: string[];
   observedAt: string;
   sourceUrls: string[];
+  links?: Array<{
+    label: string;
+    uri: string;
+  }>;
   media?: MediaAttachment;
 };
 

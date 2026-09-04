@@ -90,10 +90,11 @@ export function buildBrief(
     throw new Error(`No publishable fields are available for ${station.key}`);
   }
   const comparisons = comparisonFacts(current.values, previous?.values);
-  const comparisonSentence = comparisons.length === 0 ? "" : ` Since yesterday: ${comparisons.join("; ")}.`;
+  const comparisonSentence = comparisons.length === 0 ? "" : `\nSince yesterday: ${comparisons.join("; ")}.`;
   const label = lane === "morning" ? "Morning lake check" : "Afternoon lake check";
-  const factualText = `${label}: ${facts.join(" · ")}.${comparisonSentence}\nObserved ${formatObservedAt(current.observedAt, station.timeZone)}. Observations, not a forecast.`;
-  const linkedText = `${factualText}\n${station.links.station}`;
+  const factualText = `🌊 ${label}\n\n${facts.join(" · ")}.${comparisonSentence}\n\n🕒 Observed ${formatObservedAt(current.observedAt, station.timeZone)}\nObservations, not a forecast.`;
+  const linkLabel = "View data";
+  const linkedText = `${factualText}\n${linkLabel}`;
   const text = graphemeLength(linkedText) <= 300 ? linkedText : factualText;
   assertPostLength(text);
   return {
@@ -104,6 +105,9 @@ export function buildBrief(
     langs: ["en-US"],
     observedAt: current.observedAt,
     sourceUrls: [station.links.station],
+    ...(text === linkedText
+      ? { links: [{ label: linkLabel, uri: station.links.station }] }
+      : {}),
   };
 }
 
@@ -124,8 +128,9 @@ export function buildThermalProfilePost(
   }
   const spreadF = Math.abs(shallowest.temperatureC - deepest.temperatureC) * 1.8;
   const state = spreadF < 1.5 ? "nearly mixed" : spreadF >= 5 ? "strongly layered" : "partly layered";
-  const factualText = `The lake has floors: the water column is ${state}. The shallowest and deepest sensors are ${formatOne(spreadF)}°F apart across ${formatOne(metersToFeet(deepest.depthM - shallowest.depthM))} ft.\nObserved ${formatObservedAt(observation.observedAt, station.timeZone)}.`;
-  const linkedText = `${factualText}\n${station.links.station}`;
+  const factualText = `🌡️ Water-column profile\n\nThe lake is ${state}. The shallowest and deepest sensors are ${formatOne(spreadF)}°F apart across ${formatOne(metersToFeet(deepest.depthM - shallowest.depthM))} ft.\n\n🕒 Observed ${formatObservedAt(observation.observedAt, station.timeZone)}`;
+  const linkLabel = "View profile data";
+  const linkedText = `${factualText}\n${linkLabel}`;
   const text = graphemeLength(linkedText) <= 300 ? linkedText : factualText;
   assertPostLength(text);
   return {
@@ -138,5 +143,8 @@ export function buildThermalProfilePost(
     langs: ["en-US"],
     observedAt: observation.observedAt,
     sourceUrls: [station.links.station],
+    ...(text === linkedText
+      ? { links: [{ label: linkLabel, uri: station.links.station }] }
+      : {}),
   };
 }

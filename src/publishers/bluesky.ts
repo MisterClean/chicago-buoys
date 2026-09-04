@@ -210,6 +210,39 @@ function recordKey(post: Pick<CanonicalPost, "idempotencyKey" | "observedAt">): 
   return encoded;
 }
 
+function labeledLinkFacets(
+  text: string,
+  links: CanonicalPost["links"],
+): AppBskyRichtextFacet.Main[] {
+  if (links === undefined) {
+    return [];
+  }
+  const encoder = new TextEncoder();
+  return links.map((link) => {
+    if (link.label.length === 0) {
+      throw new Error("Bluesky labeled links require non-empty labels");
+    }
+    const labelStart = text.indexOf(link.label);
+    if (labelStart === -1) {
+      throw new Error(`Bluesky labeled link text is missing its label: ${link.label}`);
+    }
+    if (text.indexOf(link.label, labelStart + link.label.length) !== -1) {
+      throw new Error(`Bluesky labeled link text repeats its label: ${link.label}`);
+    }
+    const uri = new URL(link.uri);
+    if (uri.protocol !== "https:" && uri.protocol !== "http:") {
+      throw new Error(`Bluesky labeled link uses an unsupported protocol: ${uri.protocol}`);
+    }
+    return {
+      features: [{ $type: "app.bsky.richtext.facet#link", uri: uri.href }],
+      index: {
+        byteStart: encoder.encode(text.slice(0, labelStart)).byteLength,
+        byteEnd: encoder.encode(text.slice(0, labelStart + link.label.length)).byteLength,
+      },
+    };
+  });
+}
+
 function isMp4(bytes: Uint8Array): boolean {
   return (
     bytes.byteLength >= 12 &&
@@ -488,13 +521,21 @@ export class BlueskyPublisher implements Publisher {
       throw new Error("Bluesky posts may specify at most three languages");
     }
 
+    const facets = [...(preparedText.facets ?? []), ...labeledLinkFacets(preparedText.text, post.links)]
+      .sort((left, right) => left.index.byteStart - right.index.byteStart);
+    for (let index = 1; index < facets.length; index += 1) {
+      if ((facets[index - 1]?.index.byteEnd ?? 0) > (facets[index]?.index.byteStart ?? 0)) {
+        throw new Error("Bluesky rich-text facets may not overlap");
+      }
+    }
+
     const createdAt = this.now().toISOString();
     const baseRecord: AppBskyFeedPost.Record = {
       $type: "app.bsky.feed.post",
       createdAt,
       langs: post.langs,
       text: preparedText.text,
-      ...(preparedText.facets === undefined ? {} : { facets: preparedText.facets }),
+      ...(facets.length === 0 ? {} : { facets }),
     };
     const record =
       post.media === undefined
