@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly BOT_TIMER="chicago-lake-pulse.timer"
+readonly CONTAINER_NAME="chicago-lake-pulse"
+readonly ENV_FILE="/etc/chicago-lake-pulse.env"
+readonly IMAGE_ENV_FILE="/etc/chicago-lake-pulse-image.env"
+readonly CONFIG_FILE="/etc/chicago-lake-pulse/config.yaml"
+readonly STATE_DIRECTORY="/var/lib/chicago-lake-pulse"
+readonly DATABASE_PATH="${STATE_DIRECTORY}/pulse.sqlite"
+readonly MAX_SUCCESS_AGE_SECONDS=$((35 * 60))
+readonly MAX_CONTAINER_AGE_SECONDS=$((10 * 60))
+readonly MAX_DATABASE_BYTES=$((250 * 1024 * 1024))
+readonly MINIMUM_FREE_BYTES=$((1536 * 1024 * 1024))
+readonly WARNING_FREE_BYTES=$((2 * 1024 * 1024 * 1024))
+
+log() {
+  printf '%s %s\n' "$(date --utc +'%Y-%m-%dT%H:%M:%SZ')" "$*"
+}
+
+fail() {
+  log "ERROR: $*" >&2
+  exit 1
+}
+
+warn() {
+  log "WARNING: $*" >&2
+}
+
+[[ $EUID -eq 0 ]] || fail "Run this health check as root"
+for required_command in awk date df docker sqlite3 stat systemctl; do
+  command -v "$required_command" >/dev/null ||
+    fail "Required command is unavailable: ${required_command}"
+done
+
+for required_file in "$ENV_FILE" "$IMAGE_ENV_FILE" "$CONFIG_FILE"; do
+  [[ -r "$required_file" ]] || fail "Required file is missing or unreadable: ${required_file}"
+done
+[[ -f "$DATABASE_PATH" ]] || fail "Database does not exist: ${DATABASE_PATH}"
+
+env_mode="$(stat --format='%a' "$ENV_FILE")"
+env_owner="$(stat --format='%u:%g' "$ENV_FILE")"
+[[ "$env_mode" == "600" && "$env_owner" == "0:0" ]] ||
+  fail "${ENV_FILE} must be root:root mode 0600; found ${env_owner} mode ${env_mode}"
+
+state_owner="$(stat --format='%u:%g' "$STATE_DIRECTORY")"
+state_mode="$(stat --format='%a' "$STATE_DIRECTORY")"
+[[ "$state_owner" == "1000:1000" && "$state_mode" == "700" ]] ||
+  fail "${STATE_DIRECTORY} must be 1000:1000 mode 0700; found ${state_owner} mode ${state_mode}"
+
+systemctl is-active --quiet "$BOT_TIMER" || fail "${BOT_TIMER} is not active"
+
+image_ref="$({
+  awk -F= '$1 == "CHICAGO_LAKE_PULSE_IMAGE" {
+    sub(/^CHICAGO_LAKE_PULSE_IMAGE=/, "")
+    print
+    exit
+  }' "$IMAGE_ENV_FILE"
+})"
+[[ "$image_ref" =~ ^ghcr\.io/misterclean/chicago-lake-pulse@sha256:[0-9a-f]{64}$ ]] ||
+  fail "Image pointer is not an immutable Chicago Lake Pulse digest"
+docker image inspect "$image_ref" >/dev/null || fail "Selected image is not present locally: ${image_ref}"
+
+integrity="$(sqlite3 -readonly "$DATABASE_PATH" 'PRAGMA quick_check;')"
+[[ "$integrity" == "ok" ]] || fail "SQLite quick_check failed: ${integrity}"
+
+runs_table="$({
+  sqlite3 -readonly "$DATABASE_PATH" \
+    "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'runs';"
+})"
+if [[ "$runs_table" == "1" ]]; then
+  latest_success="$({
+    sqlite3 -readonly "$DATABASE_PATH" \
+      "SELECT coalesce(max(finished_at), '')
+       FROM runs
+       WHERE command = 'tick' AND status = 'succeeded';"
+  })"
+  consecutive_failures="$({
+    sqlite3 -readonly "$DATABASE_PATH" \
+      "SELECT count(*)
+       FROM (
+         SELECT status
+         FROM runs
+         WHERE command = 'tick'
+         ORDER BY id DESC
+         LIMIT 3
+       )
+       WHERE status = 'failed';"
+  })"
+  [[ "$consecutive_failures" != "3" ]] || fail "The last three ticks failed"
+else
+  warn "runs table is absent; using latest observation ingestion time"
+  latest_success="$({
+    sqlite3 -readonly "$DATABASE_PATH" \
+      "SELECT coalesce(max(ingested_at), '') FROM observations;"
+  })"
+fi
+[[ -n "$latest_success" ]] || fail "No successful tick is recorded"
+
+latest_success_epoch="$(date --date="$latest_success" +%s)" ||
+  fail "Could not parse latest success timestamp: ${latest_success}"
+now_epoch="$(date +%s)"
+success_age_seconds=$((now_epoch - latest_success_epoch))
+((success_age_seconds >= 0)) || fail "Latest success timestamp is in the future"
+((success_age_seconds <= MAX_SUCCESS_AGE_SECONDS)) ||
+  fail "Last successful tick is ${success_age_seconds} seconds old"
+
+stuck_publications="$({
+  sqlite3 -readonly "$DATABASE_PATH" \
+    "SELECT count(*)
+     FROM publication_intents
+     WHERE status IN ('pending', 'publishing')
+       AND unixepoch(updated_at) < unixepoch('now') - 1800;"
+})"
+[[ "$stuck_publications" == "0" ]] ||
+  fail "${stuck_publications} publication intents have been pending for more than 30 minutes"
+
+database_bytes=0
+for database_file in "$DATABASE_PATH" "${DATABASE_PATH}-wal" "${DATABASE_PATH}-shm"; do
+  if [[ -f "$database_file" ]]; then
+    file_bytes="$(stat --format='%s' "$database_file")"
+    database_bytes=$((database_bytes + file_bytes))
+  fi
+done
+((database_bytes <= MAX_DATABASE_BYTES)) ||
+  fail "SQLite state consumes ${database_bytes} bytes, above the ${MAX_DATABASE_BYTES}-byte ceiling"
+
+if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+  container_started="$({
+    docker container inspect --format '{{.State.StartedAt}}' "$CONTAINER_NAME"
+  })"
+  container_started_epoch="$(date --date="$container_started" +%s)" ||
+    fail "Could not parse container start time: ${container_started}"
+  container_age_seconds=$((now_epoch - container_started_epoch))
+  ((container_age_seconds <= MAX_CONTAINER_AGE_SECONDS)) ||
+    fail "Container has been running for ${container_age_seconds} seconds"
+fi
+
+free_bytes="$({
+  df --output=avail --block-size=1 "$STATE_DIRECTORY" | awk 'NR == 2 { print $1 }'
+})"
+[[ "$free_bytes" =~ ^[0-9]+$ ]] || fail "Could not determine free disk space"
+((free_bytes >= MINIMUM_FREE_BYTES)) ||
+  fail "Only ${free_bytes} bytes are free beneath ${STATE_DIRECTORY}"
+if ((free_bytes < WARNING_FREE_BYTES)); then
+  warn "Free disk is below 2 GiB: ${free_bytes} bytes"
+fi
+
+log "Healthy: integrity=ok success_age_seconds=${success_age_seconds} database_bytes=${database_bytes} free_bytes=${free_bytes}"

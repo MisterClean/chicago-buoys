@@ -1,0 +1,48 @@
+app:
+  mode: shadow
+  databasePath: ./var/chicago-lake-pulse.sqlite
+  logLevel: info
+
+posting:
+  ordinaryDailyMaximum: 4
+  eventDailyMaximum: 6
+  freshnessMinutes: 60
+  delayedMinutes: 20
+
+publishers:
+  - id: primary-bluesky
+    kind: bluesky
+    enabled: false
+    serviceUrl: https://bsky.social
+    handleEnv: LAKE_PULSE_BLUESKY_HANDLE
+    appPasswordEnv: LAKE_PULSE_BLUESKY_APP_PASSWORD
+    sessionPath: ./var/bluesky-session.json
+
+stations:
+  - key: chicago-pier
+    displayName: Chicago Pier Buoy
+    timeZone: America/Chicago
+    latitude: 41.8925
+    longitude: -87.5631
+    links:
+      station: https://data.freeboard.tech/station/45198/
+      officialForecast: https://www.weather.gov/marine/lotmz
+    sources:
+      glos:
+        baseUrl: https://seagull-erddap.glos.org/erddap
+        dataset: obs_98
+        latestDataset: obs_98_latest
+      ndbc:
+        stationId: "45198"
+        realtimeUrl: https://www.ndbc.noaa.gov/data/realtime2/45198.txt
+    camera:
+      enabled: false
+      currentClipUrl: https://station-media-files.s3.us-east-2.amazonaws.com/45198.mp4
+      archiveFeedUrl: https://www.limnotechdata.com/stations/index.php?rss=gallery&albumname=chicago&lang=
+      freshnessMinutes: 120
+      maximumBytes: 50000000
+      dailyMaximum: 1
+      minimumIntervalHours: 4
+      opportunityHoursLocal: [10, 14, 18]
+      rights:
+        status: not_granted

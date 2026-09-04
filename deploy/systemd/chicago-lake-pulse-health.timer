@@ -1,0 +1,12 @@
+[Unit]
+Description=Check Chicago Lake Pulse health hourly
+
+[Timer]
+OnCalendar=*-*-* *:47:00 UTC
+Persistent=true
+RandomizedDelaySec=90s
+AccuracySec=30s
+Unit=chicago-lake-pulse-health.service
+
+[Install]
+WantedBy=timers.target

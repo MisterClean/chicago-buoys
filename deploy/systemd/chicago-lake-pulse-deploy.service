@@ -1,0 +1,14 @@
+[Unit]
+Description=Deploy the promoted Chicago Lake Pulse image
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/chicago-lake-pulse.env
+ConditionPathExists=/etc/chicago-lake-pulse/config.yaml
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/deploy-chicago-lake-pulse
+TimeoutStartSec=20min
+Nice=15
+IOSchedulingClass=idle

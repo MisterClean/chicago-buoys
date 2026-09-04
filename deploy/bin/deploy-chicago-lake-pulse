@@ -1,0 +1,373 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly IMAGE_REPOSITORY="ghcr.io/misterclean/chicago-lake-pulse"
+readonly REGISTRY_REPOSITORY="misterclean/chicago-lake-pulse"
+readonly EXPECTED_SOURCE="https://github.com/misterclean/chicago-lake-pulse"
+readonly PRODUCTION_TAG="production"
+readonly BOT_SERVICE="chicago-lake-pulse.service"
+readonly BOT_TIMER="chicago-lake-pulse.timer"
+readonly ENV_FILE="/etc/chicago-lake-pulse.env"
+readonly IMAGE_ENV_FILE="/etc/chicago-lake-pulse-image.env"
+readonly CONFIG_FILE="/etc/chicago-lake-pulse/config.yaml"
+readonly STATE_DIRECTORY="/var/lib/chicago-lake-pulse"
+readonly DATABASE_PATH="${STATE_DIRECTORY}/pulse.sqlite"
+readonly BACKUP_DIRECTORY="${STATE_DIRECTORY}/deploy-backups"
+readonly SHADOW_DIRECTORY="${STATE_DIRECTORY}/deploy-shadow"
+readonly DEPLOYMENT_DIRECTORY="${STATE_DIRECTORY}/deployments"
+readonly LOCK_FILE="/run/lock/chicago-lake-pulse-deploy.lock"
+readonly MINIMUM_FREE_BYTES=$((2 * 1024 * 1024 * 1024))
+readonly RETAINED_BACKUPS=5
+
+requested_digest=""
+timer_was_active=false
+pointer_temp=""
+shadow_database=""
+
+log() {
+  printf '%s %s\n' "$(date --utc +'%Y-%m-%dT%H:%M:%SZ')" "$*"
+}
+
+fail() {
+  log "ERROR: $*" >&2
+  exit 1
+}
+
+usage() {
+  printf 'Usage: %s [--digest sha256:<digest>]\n' "${0##*/}"
+}
+
+cleanup() {
+  local exit_code=$?
+
+  if [[ -n "$pointer_temp" && -e "$pointer_temp" ]]; then
+    rm --force -- "$pointer_temp"
+  fi
+  if [[ -n "$shadow_database" ]]; then
+    rm --force -- "$shadow_database" "${shadow_database}-wal" "${shadow_database}-shm"
+  fi
+  if [[ "$timer_was_active" == true ]]; then
+    systemctl start "$BOT_TIMER" || true
+  fi
+
+  exit "$exit_code"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM HUP
+
+while (($# > 0)); do
+  case "$1" in
+    --digest)
+      (($# >= 2)) || fail "--digest requires a value"
+      requested_digest="$2"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      fail "Unknown argument: $1"
+      ;;
+  esac
+done
+
+[[ $EUID -eq 0 ]] || fail "Run this deployer as root"
+for required_command in awk chmod chown comm curl cut df docker find flock grep head install jq mktemp mv rm sort sqlite3 stat systemctl; do
+  command -v "$required_command" >/dev/null ||
+    fail "Required command is unavailable: ${required_command}"
+done
+[[ -r "$ENV_FILE" ]] || fail "Missing production environment file: ${ENV_FILE}"
+[[ -r "$CONFIG_FILE" ]] || fail "Missing runtime config file: ${CONFIG_FILE}"
+
+exec 9>"$LOCK_FILE"
+if ! flock --nonblock 9; then
+  log "Another Chicago Lake Pulse deployment is already running; exiting"
+  exit 0
+fi
+
+install -d --mode=0700 --owner=1000 --group=1000 "$STATE_DIRECTORY"
+install -d --mode=0700 --owner=1000 --group=1000 "$SHADOW_DIRECTORY"
+install -d --mode=0750 --owner=root --group=root "$BACKUP_DIRECTORY" "$DEPLOYMENT_DIRECTORY"
+
+resolve_production_digest() {
+  local token headers digest
+
+  token="$({
+    curl --fail --silent --show-error --get \
+      --data-urlencode "scope=repository:${REGISTRY_REPOSITORY}:pull" \
+      "https://ghcr.io/token" |
+      jq --exit-status --raw-output '.token'
+  })"
+  headers="$({
+    curl --fail --silent --show-error --head \
+      --header "Authorization: Bearer ${token}" \
+      --header "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+      "https://ghcr.io/v2/${REGISTRY_REPOSITORY}/manifests/${PRODUCTION_TAG}"
+  })"
+  digest="$({
+    awk 'tolower($1) == "docker-content-digest:" {
+      gsub("\\r", "", $2)
+      print $2
+      exit
+    }' <<<"$headers"
+  })"
+  [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    fail "GHCR returned an invalid production digest"
+  printf '%s\n' "$digest"
+}
+
+if [[ -n "$requested_digest" ]]; then
+  [[ "$requested_digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    fail "Invalid digest: ${requested_digest}"
+  candidate_digest="$requested_digest"
+else
+  candidate_digest="$(resolve_production_digest)"
+fi
+candidate_ref="${IMAGE_REPOSITORY}@${candidate_digest}"
+
+current_ref="$({
+  awk -F= '$1 == "CHICAGO_LAKE_PULSE_IMAGE" {
+    sub(/^CHICAGO_LAKE_PULSE_IMAGE=/, "")
+    print
+    exit
+  }' "$IMAGE_ENV_FILE" 2>/dev/null || true
+})"
+if [[ -n "$current_ref" &&
+      ! "$current_ref" =~ ^ghcr\.io/misterclean/chicago-lake-pulse@sha256:[0-9a-f]{64}$ ]]; then
+  fail "Existing image pointer is not an immutable Chicago Lake Pulse digest"
+fi
+if [[ "$current_ref" == "$candidate_ref" ]]; then
+  log "Production already uses ${candidate_digest}"
+  exit 0
+fi
+
+free_bytes="$({
+  df --output=avail --block-size=1 /var/lib/docker | awk 'NR == 2 { print $1 }'
+})"
+[[ "$free_bytes" =~ ^[0-9]+$ ]] || fail "Could not determine free disk space"
+((free_bytes >= MINIMUM_FREE_BYTES)) ||
+  fail "Less than 2 GiB is free beneath /var/lib/docker; refusing to pull"
+
+log "Pulling immutable candidate ${candidate_ref}"
+docker pull "$candidate_ref"
+
+candidate_arch="$(docker image inspect --format '{{.Architecture}}' "$candidate_ref")"
+candidate_os="$(docker image inspect --format '{{.Os}}' "$candidate_ref")"
+[[ "${candidate_os}/${candidate_arch}" == "linux/amd64" ]] ||
+  fail "Candidate platform is ${candidate_os}/${candidate_arch}, expected linux/amd64"
+
+candidate_commit="$({
+  docker image inspect \
+    --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+    "$candidate_ref"
+})"
+[[ "$candidate_commit" =~ ^[0-9a-f]{40}$ ]] ||
+  fail "Candidate has an invalid Git revision label"
+
+candidate_source="$({
+  docker image inspect \
+    --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' \
+    "$candidate_ref"
+})"
+[[ "$candidate_source" == "$EXPECTED_SOURCE" ]] ||
+  fail "Candidate source label is ${candidate_source}, expected ${EXPECTED_SOURCE}"
+
+if systemctl is-active --quiet "$BOT_TIMER"; then
+  timer_was_active=true
+fi
+systemctl stop "$BOT_TIMER"
+
+if systemctl is-active --quiet "$BOT_SERVICE"; then
+  fail "${BOT_SERVICE} is running; deployment will retry later"
+fi
+
+deployed_at="$(date --utc +'%Y%m%dT%H%M%SZ')"
+backup_database="${BACKUP_DIRECTORY}/${deployed_at}-${candidate_digest#sha256:}.sqlite3"
+shadow_database="${SHADOW_DIRECTORY}/${deployed_at}-${candidate_digest#sha256:}.sqlite3"
+before_schema="${BACKUP_DIRECTORY}/${deployed_at}-schema-before.txt"
+after_schema="${BACKUP_DIRECTORY}/${deployed_at}-schema-after.txt"
+
+schema_inventory() {
+  local database=$1
+
+  sqlite3 -readonly -separator '|' "$database" "
+    SELECT 'object', type, name, tbl_name
+    FROM sqlite_schema
+    WHERE type IN ('table', 'index')
+      AND name NOT LIKE 'sqlite_%'
+    UNION ALL
+    SELECT
+      'column',
+      schema.name,
+      columns.name,
+      coalesce(columns.type, '') || ':' ||
+        columns.\"notnull\" || ':' ||
+        columns.pk || ':' ||
+        coalesce(columns.dflt_value, '')
+    FROM sqlite_schema AS schema
+    JOIN pragma_table_info(schema.name) AS columns
+    WHERE schema.type = 'table'
+      AND schema.name NOT LIKE 'sqlite_%';
+  " | LC_ALL=C sort --unique
+}
+
+if [[ -f "$DATABASE_PATH" ]]; then
+  log "Creating a consistent SQLite backup at ${backup_database}"
+  sqlite3 "$DATABASE_PATH" ".timeout 30000" ".backup '${backup_database}'"
+  sqlite3 -readonly "$backup_database" 'PRAGMA quick_check;' |
+    grep --line-regexp --quiet ok || fail "Database backup failed quick_check"
+  sqlite3 -readonly "$backup_database" ".backup '${shadow_database}'"
+  schema_inventory "$backup_database" >"$before_schema"
+else
+  log "No production database exists; validating a first-run migration"
+  install --mode=0600 --owner=1000 --group=1000 /dev/null "$shadow_database"
+  : >"$before_schema"
+fi
+chown 1000:1000 "$shadow_database"
+chmod 0600 "$shadow_database"
+
+run_candidate() {
+  local state_directory=$1
+  local network_mode=$2
+  shift 2
+
+  docker run --rm \
+    --init \
+    --user 1000:1000 \
+    --pids-limit 64 \
+    --memory 192m \
+    --memory-swap 256m \
+    --cpus 0.75 \
+    --oom-score-adj 300 \
+    --ulimit nofile=1024:1024 \
+    --cap-drop ALL \
+    --security-opt no-new-privileges:true \
+    --read-only \
+    --network "$network_mode" \
+    --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777 \
+    --log-driver journald \
+    --env-file "$ENV_FILE" \
+    --env PUBLISH_ENABLED=false \
+    --env CAMERA_PUBLISH_ENABLED=false \
+    --env CONFIG_PATH=/app/config/runtime.yaml \
+    --env DATABASE_PATH=/state/pulse.sqlite \
+    --env BLUESKY_SESSION_PATH=/state/bluesky-session.json \
+    --mount "type=bind,src=${CONFIG_FILE},dst=/app/config/runtime.yaml,readonly" \
+    --mount "type=bind,src=${state_directory},dst=/state" \
+    "$candidate_ref" "$@"
+}
+
+log "Applying candidate migrations to the disposable shadow database"
+run_candidate "$SHADOW_DIRECTORY" none \
+  migrate --config /app/config/runtime.yaml --database "/state/${shadow_database##*/}" --offline
+
+schema_inventory "$shadow_database" >"$after_schema"
+removed_schema="$(comm -23 "$before_schema" "$after_schema")"
+if [[ -n "$removed_schema" ]]; then
+  printf '%s\n' "$removed_schema" >&2
+  fail "Candidate removed or incompatibly changed existing schema"
+fi
+
+log "Running offline diagnostics against the shadow database"
+run_candidate "$SHADOW_DIRECTORY" none \
+  doctor --config /app/config/runtime.yaml --database "/state/${shadow_database##*/}" --offline
+
+log "Running a publishing-disabled network smoke test against the shadow database"
+run_candidate "$SHADOW_DIRECTORY" bridge \
+  tick --config /app/config/runtime.yaml --database "/state/${shadow_database##*/}" --dry-run
+
+write_image_pointer() {
+  local image_ref=$1
+
+  pointer_temp="$(mktemp "${IMAGE_ENV_FILE}.XXXXXX")"
+  printf 'CHICAGO_LAKE_PULSE_IMAGE=%s\n' "$image_ref" >"$pointer_temp"
+  chown root:root "$pointer_temp"
+  chmod 0600 "$pointer_temp"
+  mv --force -- "$pointer_temp" "$IMAGE_ENV_FILE"
+  pointer_temp=""
+}
+
+log "Applying expand-only migrations to production state"
+run_candidate "$STATE_DIRECTORY" none \
+  migrate --config /app/config/runtime.yaml --database /state/pulse.sqlite --offline
+run_candidate "$STATE_DIRECTORY" none \
+  doctor --config /app/config/runtime.yaml --database /state/pulse.sqlite --offline
+
+previous_ref="$current_ref"
+write_image_pointer "$candidate_ref"
+
+log "Running one live cycle with ${candidate_digest}"
+if ! systemctl start "$BOT_SERVICE"; then
+  if [[ -n "$previous_ref" ]]; then
+    log "Live cycle failed; restoring image pointer to ${previous_ref}"
+    write_image_pointer "$previous_ref"
+  else
+    rm --force -- "$IMAGE_ENV_FILE"
+  fi
+  fail "Deployment failed; the database backup and candidate image were preserved"
+fi
+
+metadata_file="${DEPLOYMENT_DIRECTORY}/${deployed_at}.env"
+{
+  printf 'DEPLOYED_AT=%s\n' "$deployed_at"
+  printf 'COMMIT=%s\n' "$candidate_commit"
+  printf 'DIGEST=%s\n' "$candidate_digest"
+  printf 'IMAGE=%s\n' "$candidate_ref"
+  printf 'PREVIOUS_IMAGE=%s\n' "$previous_ref"
+  if [[ -f "$backup_database" ]]; then
+    printf 'DATABASE_BACKUP=%s\n' "$backup_database"
+  fi
+} >"$metadata_file"
+chown root:root "$metadata_file"
+chmod 0640 "$metadata_file"
+
+prune_files() {
+  local directory=$1
+  local pattern=$2
+  local keep=$3
+  local -a entries=()
+  local entry path index
+
+  mapfile -d '' entries < <(
+    find "$directory" -maxdepth 1 -type f -name "$pattern" -printf '%T@ %p\0' |
+      sort --zero-terminated --numeric-sort --reverse
+  )
+  for ((index = keep; index < ${#entries[@]}; index += 1)); do
+    entry="${entries[$index]}"
+    path="${entry#* }"
+    rm --force -- "$path"
+  done
+}
+
+prune_files "$BACKUP_DIRECTORY" '*.sqlite3' "$RETAINED_BACKUPS"
+prune_files "$BACKUP_DIRECTORY" '*-schema-before.txt' "$RETAINED_BACKUPS"
+prune_files "$BACKUP_DIRECTORY" '*-schema-after.txt' "$RETAINED_BACKUPS"
+prune_files "$DEPLOYMENT_DIRECTORY" '*.env' 20
+
+superseded_ref=""
+if [[ -n "$previous_ref" ]]; then
+  previous_metadata="$({
+    find "$DEPLOYMENT_DIRECTORY" -maxdepth 1 -type f -name '*.env' ! -path "$metadata_file" \
+      -printf '%T@ %p\n' | sort --numeric-sort --reverse | cut --delimiter=' ' --fields=2- | head --lines=1
+  })"
+  if [[ -n "$previous_metadata" ]]; then
+    superseded_ref="$({
+      awk -F= '$1 == "PREVIOUS_IMAGE" {
+        sub(/^PREVIOUS_IMAGE=/, "")
+        print
+        exit
+      }' "$previous_metadata"
+    })"
+  fi
+fi
+if [[ "$superseded_ref" =~ ^${IMAGE_REPOSITORY}@sha256:[0-9a-f]{64}$ &&
+      "$superseded_ref" != "$candidate_ref" &&
+      "$superseded_ref" != "$previous_ref" ]]; then
+  log "Removing superseded Chicago Lake Pulse image ${superseded_ref}"
+  docker image rm "$superseded_ref" >/dev/null 2>&1 ||
+    log "WARNING: Could not remove superseded image ${superseded_ref}"
+fi
+
+log "Deployed commit ${candidate_commit} at ${candidate_digest}"

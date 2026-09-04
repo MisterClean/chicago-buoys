@@ -1,0 +1,9 @@
+[Unit]
+Description=Check Chicago Lake Pulse health
+After=chicago-lake-pulse.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/check-chicago-lake-pulse
+Nice=19
+IOSchedulingClass=idle
