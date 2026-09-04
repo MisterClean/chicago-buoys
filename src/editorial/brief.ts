@@ -102,7 +102,7 @@ export function buildBrief(
   const label = lane === "morning" ? "🌅 Morning lake check" : "🌤️ Afternoon lake check";
   const factualText = `${label}\n\n${facts.join("\n")}${comparisonSentence}\n\n🕒 Observed ${formatObservedAt(current.observedAt, station.timeZone)}`;
   const linkLabel = "View data";
-  const linkedText = `${factualText}\n${linkLabel}`;
+  const linkedText = `${factualText}  ·  ${linkLabel}`;
   const text = graphemeLength(linkedText) <= 300 ? linkedText : factualText;
   assertPostLength(text);
   return {
@@ -138,7 +138,7 @@ export function buildThermalProfilePost(
   const state = spreadF < 1.5 ? "nearly mixed" : spreadF >= 5 ? "strongly layered" : "partly layered";
   const factualText = `🌡️ Water-column profile\n\nThe lake is ${state}.\n🌡️ Temperature spread ${formatOne(spreadF)}°F\n↕️ Depth range ${formatOne(metersToFeet(deepest.depthM - shallowest.depthM))} ft\n\n🕒 Observed ${formatObservedAt(observation.observedAt, station.timeZone)}`;
   const linkLabel = "View profile data";
-  const linkedText = `${factualText}\n${linkLabel}`;
+  const linkedText = `${factualText}  ·  ${linkLabel}`;
   const text = graphemeLength(linkedText) <= 300 ? linkedText : factualText;
   assertPostLength(text);
   return {

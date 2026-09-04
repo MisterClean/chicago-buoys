@@ -55,6 +55,7 @@ describe("brief rendering", () => {
     expect(post.text).toContain("💨 Wind");
     expect(post.text).toContain("🎚️ Pressure");
     expect(post.text).toContain("💧 Humidity");
+    expect(post.text).toMatch(/🕒 Observed .+  ·  View data/);
     expect(post.text).not.toContain("Observations, not a forecast");
     expect(graphemeLength(post.text)).toBeLessThanOrEqual(300);
   });
@@ -68,6 +69,7 @@ describe("brief rendering", () => {
   it("renders thermal structure without causal claims", () => {
     const post = buildThermalProfilePost(station, observation("2026-09-04T17:00:00Z", 0.3, 24));
     expect(post.text).toContain("strongly layered");
+    expect(post.text).toMatch(/🕒 Observed .+  ·  View profile data/);
     expect(graphemeLength(post.text)).toBeLessThanOrEqual(300);
   });
 });

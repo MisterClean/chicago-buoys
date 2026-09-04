@@ -34,7 +34,7 @@ export function buildCameraPost(station: StationConfig, clip: CameraClipCandidat
     timeZoneName: "short",
   }).format(new Date(clip.lastModified));
   const linkLabel = "View buoy page";
-  const text = `🎥 Offshore office hours\n\nA recent view from ${station.displayName}. Camera updated ${updated}.\nVideo: ${camera.rights.attribution}\n${linkLabel}`;
+  const text = `🎥 Offshore office hours\n\nA recent view from ${station.displayName}.\n🕒 Camera updated ${updated}  ·  ${linkLabel}\nVideo: ${camera.rights.attribution}`;
   assertPostLength(text);
   return {
     idempotencyKey: sha256(`${station.key}:camera:${clip.sha256}`),
