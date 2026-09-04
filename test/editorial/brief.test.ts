@@ -23,7 +23,9 @@ function observation(observedAt: string, waveM: number, waterC: number): Normali
     sourceHash: observedAt,
     overallQuality: "good",
     values: {
+      airPressureHpa: 1012.1,
       airTemperatureC: 20,
+      relativeHumidityPercent: 81.8,
       seaSurfaceTemperatureC: waterC,
       significantWaveHeightM: waveM,
       waveMeanPeriodS: 3.2,
@@ -47,7 +49,13 @@ describe("brief rendering", () => {
     const post = buildBrief(station, "morning", current, previous);
 
     expect(post.text).toContain("Since yesterday");
-    expect(post.text).toContain("Observations, not a forecast");
+    expect(post.text).toContain("🌊 Waves");
+    expect(post.text).toContain("⏱️ Period");
+    expect(post.text).toContain("🌡️ Water");
+    expect(post.text).toContain("💨 Wind");
+    expect(post.text).toContain("🎚️ Pressure");
+    expect(post.text).toContain("💧 Humidity");
+    expect(post.text).not.toContain("Observations, not a forecast");
     expect(graphemeLength(post.text)).toBeLessThanOrEqual(300);
   });
 

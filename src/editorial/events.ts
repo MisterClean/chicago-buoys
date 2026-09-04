@@ -23,7 +23,7 @@ function buildEvent(
   text: string,
 ): CanonicalPost {
   const linkLabel = "View data";
-  const postText = `${text}\n\nObserved at ${station.displayName}. Observations, not a forecast.\n${linkLabel}`;
+  const postText = `${text}\n\nObserved at ${station.displayName}.\n${linkLabel}`;
   assertPostLength(postText);
   return {
     idempotencyKey: sha256(`${station.key}:event:${family}:${current.observedAt}`),

@@ -18,14 +18,16 @@ function formatOne(value: number): string {
 function currentFacts(values: ObservationValues): string[] {
   const facts: string[] = [];
   if (values.significantWaveHeightM !== undefined) {
-    const period = values.waveMeanPeriodS === undefined ? "" : ` @ ${formatOne(values.waveMeanPeriodS)} s`;
-    facts.push(`Waves ${formatOne(metersToFeet(values.significantWaveHeightM))} ft${period}`);
+    facts.push(`🌊 Waves ${formatOne(metersToFeet(values.significantWaveHeightM))} ft`);
+    if (values.waveMeanPeriodS !== undefined) {
+      facts.push(`⏱️ Period ${formatOne(values.waveMeanPeriodS)} s`);
+    }
   }
   if (values.seaSurfaceTemperatureC !== undefined) {
-    facts.push(`Water ${formatOne(celsiusToFahrenheit(values.seaSurfaceTemperatureC))}°F`);
+    facts.push(`🌡️ Water ${formatOne(celsiusToFahrenheit(values.seaSurfaceTemperatureC))}°F`);
   }
   if (values.airTemperatureC !== undefined) {
-    facts.push(`Air ${formatOne(celsiusToFahrenheit(values.airTemperatureC))}°F`);
+    facts.push(`🌡️ Air ${formatOne(celsiusToFahrenheit(values.airTemperatureC))}°F`);
   }
   if (values.windSpeedMps !== undefined) {
     const direction =
@@ -34,7 +36,13 @@ function currentFacts(values: ObservationValues): string[] {
       values.windGustMps === undefined
         ? ""
         : `, gust ${formatOne(metersPerSecondToKnots(values.windGustMps))}`;
-    facts.push(`Wind ${direction}${formatOne(metersPerSecondToKnots(values.windSpeedMps))} kt${gust}`);
+    facts.push(`💨 Wind ${direction}${formatOne(metersPerSecondToKnots(values.windSpeedMps))} kt${gust}`);
+  }
+  if (values.airPressureHpa !== undefined) {
+    facts.push(`🎚️ Pressure ${formatOne(values.airPressureHpa)} hPa`);
+  }
+  if (values.relativeHumidityPercent !== undefined) {
+    facts.push(`💧 Humidity ${formatOne(values.relativeHumidityPercent)}%`);
   }
   return facts;
 }
@@ -91,8 +99,8 @@ export function buildBrief(
   }
   const comparisons = comparisonFacts(current.values, previous?.values);
   const comparisonSentence = comparisons.length === 0 ? "" : `\nSince yesterday: ${comparisons.join("; ")}.`;
-  const label = lane === "morning" ? "Morning lake check" : "Afternoon lake check";
-  const factualText = `🌊 ${label}\n\n${facts.join(" · ")}.${comparisonSentence}\n\n🕒 Observed ${formatObservedAt(current.observedAt, station.timeZone)}\nObservations, not a forecast.`;
+  const label = lane === "morning" ? "🌅 Morning lake check" : "🌤️ Afternoon lake check";
+  const factualText = `${label}\n\n${facts.join("\n")}${comparisonSentence}\n\n🕒 Observed ${formatObservedAt(current.observedAt, station.timeZone)}`;
   const linkLabel = "View data";
   const linkedText = `${factualText}\n${linkLabel}`;
   const text = graphemeLength(linkedText) <= 300 ? linkedText : factualText;
@@ -128,7 +136,7 @@ export function buildThermalProfilePost(
   }
   const spreadF = Math.abs(shallowest.temperatureC - deepest.temperatureC) * 1.8;
   const state = spreadF < 1.5 ? "nearly mixed" : spreadF >= 5 ? "strongly layered" : "partly layered";
-  const factualText = `🌡️ Water-column profile\n\nThe lake is ${state}. The shallowest and deepest sensors are ${formatOne(spreadF)}°F apart across ${formatOne(metersToFeet(deepest.depthM - shallowest.depthM))} ft.\n\n🕒 Observed ${formatObservedAt(observation.observedAt, station.timeZone)}`;
+  const factualText = `🌡️ Water-column profile\n\nThe lake is ${state}.\n🌡️ Temperature spread ${formatOne(spreadF)}°F\n↕️ Depth range ${formatOne(metersToFeet(deepest.depthM - shallowest.depthM))} ft\n\n🕒 Observed ${formatObservedAt(observation.observedAt, station.timeZone)}`;
   const linkLabel = "View profile data";
   const linkedText = `${factualText}\n${linkLabel}`;
   const text = graphemeLength(linkedText) <= 300 ? linkedText : factualText;
