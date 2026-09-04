@@ -61,7 +61,7 @@ sudo install -m 0755 -o root -g root deploy/bin/check-chicago-buoys /usr/local/s
 sudo install -m 0644 -o root -g root deploy/systemd/* /etc/systemd/system/
 ```
 
-Edit the installed config to use the `/state` paths shown above. Fill the Bluesky handle, account DID, and app password only in `/etc/chicago-buoys.env`; do not put them in the repository, image, unit files, shell history, or GitHub Actions variables. The publisher checks both the handle and immutable DID before uploading or writing anything.
+Edit the installed config to use the `/state` paths shown above. Fill the Bluesky handle and app password only in `/etc/chicago-buoys.env`; do not put them in the repository, image, unit files, shell history, or GitHub Actions variables. The publisher verifies the authenticated handle before uploading or writing anything. An optional `expectedDidEnv` setting can pin the immutable account DID as an additional safeguard.
 
 Validate and load the unit files:
 
@@ -146,7 +146,7 @@ Before going live:
 1. Confirm scheduled text and timestamps against the source dashboards.
 2. Confirm stale, partial, duplicate, and corrected rows behave correctly.
 3. Confirm camera publishing remains disabled.
-4. Put the bot handle, immutable DID, and a valid app password in the host env file.
+4. Put the bot handle and a valid app password in the host env file.
 5. Change the publisher's `enabled` value to true and `app.mode` to `live` in the host config.
 6. Start one manual service cycle and inspect its receipt before relying on the timer.
 

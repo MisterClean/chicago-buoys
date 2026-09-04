@@ -38,6 +38,7 @@ function post(): CanonicalPost {
     stationKey: "test",
     text: "Lake check",
     langs: ["en-US"],
+    observedAt: "2026-09-04T15:00:00.000Z",
     sourceUrls: ["https://example.com"],
   };
 }

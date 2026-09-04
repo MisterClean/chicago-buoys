@@ -75,7 +75,7 @@ export type CanonicalPost = {
   stationKey: string;
   text: string;
   langs: string[];
-  observedAt?: string;
+  observedAt: string;
   sourceUrls: string[];
   media?: MediaAttachment;
 };

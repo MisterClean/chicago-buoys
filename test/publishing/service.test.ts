@@ -35,6 +35,7 @@ const post: CanonicalPost = {
   idempotencyKey: "retryable-post",
   kind: "brief:morning",
   langs: ["en-US"],
+  observedAt: "2026-09-04T15:00:00.000Z",
   sourceUrls: ["https://example.com/station"],
   stationKey: "test",
   text: "Lake check",

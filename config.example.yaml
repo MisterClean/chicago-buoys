@@ -17,7 +17,6 @@ publishers:
     serviceUrl: https://bsky.social
     handleEnv: CHICAGO_BUOYS_BLUESKY_HANDLE
     appPasswordEnv: CHICAGO_BUOYS_BLUESKY_APP_PASSWORD
-    expectedDidEnv: CHICAGO_BUOYS_BLUESKY_DID
     sessionPath: ./var/bluesky-session.json
 
 stations:

@@ -96,11 +96,10 @@ publishers:
     enabled: false
     handleEnv: CHICAGO_BUOYS_BLUESKY_HANDLE
     appPasswordEnv: CHICAGO_BUOYS_BLUESKY_APP_PASSWORD
-    expectedDidEnv: CHICAGO_BUOYS_BLUESKY_DID
     sessionPath: ./var/bluesky-session.json
 ```
 
-Copy [`.env.example`](.env.example) for the variable names. Use a Bluesky app password, never the account's main password. Session files contain credentials and must remain private.
+Copy [`.env.example`](.env.example) for the variable names. Use a Bluesky app password, never the account's main password. Bluesky resolves the account DID during login; deployments that want an additional account pin may optionally set `expectedDidEnv` in YAML. Session files contain credentials and must remain private.
 
 ## Source precedence
 

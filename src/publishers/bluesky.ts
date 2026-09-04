@@ -26,6 +26,8 @@ const IMAGE_MAX_BYTES = 2_000_000;
 const VIDEO_MAX_BYTES = 300_000_000;
 const VIDEO_UPLOAD_LIMIT_LEXICON = "app.bsky.video.getUploadLimits";
 const PDS_UPLOAD_BLOB_LEXICON = "com.atproto.repo.uploadBlob";
+const TID_ALPHABET = "234567abcdefghijklmnopqrstuvwxyz";
+const TID_MAX_MICROSECONDS = (1n << 53n) - 1n;
 
 export type BlueskyPublisherOptions = {
   id: string;
@@ -185,8 +187,27 @@ function validateAspectRatio(
   };
 }
 
-function recordKey(idempotencyKey: string): string {
-  return createHash("sha256").update(idempotencyKey).digest("hex");
+function recordKey(post: Pick<CanonicalPost, "idempotencyKey" | "observedAt">): string {
+  const observedAtMs = Date.parse(post.observedAt);
+  if (!Number.isSafeInteger(observedAtMs) || observedAtMs < 0) {
+    throw new Error("Bluesky posts require a valid non-negative observedAt timestamp");
+  }
+
+  const digest = createHash("sha256").update(post.idempotencyKey).digest();
+  const paddedMicroseconds = (((digest[0] ?? 0) << 8) | (digest[1] ?? 0)) % 1_000;
+  const clockIdentifier = (((digest[2] ?? 0) << 8) | (digest[3] ?? 0)) & 0x3ff;
+  const timestampMicroseconds = BigInt(observedAtMs) * 1_000n + BigInt(paddedMicroseconds);
+  if (timestampMicroseconds > TID_MAX_MICROSECONDS) {
+    throw new Error("Bluesky post observedAt timestamp exceeds the TID range");
+  }
+
+  let value = (timestampMicroseconds << 10n) | BigInt(clockIdentifier);
+  let encoded = "";
+  for (let index = 0; index < 13; index += 1) {
+    encoded = (TID_ALPHABET[Number(value & 31n)] ?? "") + encoded;
+    value >>= 5n;
+  }
+  return encoded;
 }
 
 function isMp4(bytes: Uint8Array): boolean {
@@ -456,7 +477,7 @@ export class BlueskyPublisher implements Publisher {
 
   public async publish(post: CanonicalPost): Promise<PublishReceipt> {
     const client = await this.client();
-    const rkey = recordKey(post.idempotencyKey);
+    const rkey = recordKey(post);
     const existing = await client.getPost(rkey);
     if (existing !== undefined) {
       return this.receipt(existing);
@@ -478,7 +499,7 @@ export class BlueskyPublisher implements Publisher {
     const record =
       post.media === undefined
         ? baseRecord
-        : await this.attachMedia(baseRecord, post.media, post.idempotencyKey, client);
+        : await this.attachMedia(baseRecord, post.media, rkey, client);
     let response: { uri: string; cid: string };
     try {
       response = await client.createPost(record, rkey);
@@ -551,7 +572,7 @@ export class BlueskyPublisher implements Publisher {
   private async attachMedia(
     record: AppBskyFeedPost.Record,
     media: MediaAttachment,
-    idempotencyKey: string,
+    rkey: string,
     client: BlueskyClientPort,
   ): Promise<AppBskyFeedPost.Record> {
     if (media.alt.trim().length === 0) {
@@ -584,7 +605,7 @@ export class BlueskyPublisher implements Publisher {
       };
     }
 
-    const blob = await this.uploadVideo(media, idempotencyKey, client);
+    const blob = await this.uploadVideo(media, rkey, client);
     return {
       ...record,
       embed: {
@@ -599,7 +620,7 @@ export class BlueskyPublisher implements Publisher {
 
   private async uploadVideo(
     media: Extract<MediaAttachment, { kind: "video" }>,
-    idempotencyKey: string,
+    rkey: string,
     client: BlueskyClientPort,
   ): Promise<BlobRef> {
     if (media.bytes.byteLength > VIDEO_MAX_BYTES) {
@@ -617,7 +638,7 @@ export class BlueskyPublisher implements Publisher {
     const start = await this.videoService.startUpload(
       {
         mimeType: "video/mp4",
-        name: `chicago-buoys-${recordKey(idempotencyKey).slice(0, 16)}.mp4`,
+        name: `chicago-buoys-${rkey}.mp4`,
         sizeBytes: media.bytes.byteLength,
       },
       initialToken,

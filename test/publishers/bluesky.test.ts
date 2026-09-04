@@ -177,6 +177,7 @@ function post(media?: CanonicalPost["media"]): CanonicalPost {
     kind: "camera",
     langs: ["en"],
     ...(media === undefined ? {} : { media }),
+    observedAt: fixedDate.toISOString(),
     sourceUrls: ["https://example.com/station"],
     stationKey: "chicago",
     text: "Lake Michigan right now.",
@@ -216,7 +217,9 @@ describe("BlueskyPublisher", () => {
         },
       ],
     });
-    expect(client.posts[0]?.rkey).toMatch(/^[a-f0-9]{64}$/u);
+    expect(client.posts[0]?.rkey).toMatch(
+      /^[234567abcdefghij][234567abcdefghijklmnopqrstuvwxyz]{12}$/u,
+    );
     expect(receipt).toMatchObject({ cid: "post-cid", publisherId: "bluesky" });
   });
 
@@ -490,6 +493,26 @@ describe("createBlueskyPublisher", () => {
       BOT_PASSWORD: "app-password",
       BOT_DID: "did:plc:chicago-buoys",
     });
+    expect(result.id).toBe("bluesky");
+  });
+
+  it("allows DID pinning to be omitted", () => {
+    const result = createBlueskyPublisher(
+      {
+        appPasswordEnv: "BOT_PASSWORD",
+        enabled: true,
+        handleEnv: "BOT_HANDLE",
+        id: "bluesky",
+        kind: "bluesky",
+        serviceUrl: "https://bsky.social",
+        sessionPath: "/state/session.json",
+      },
+      {
+        BOT_HANDLE: "chicago-buoys.test",
+        BOT_PASSWORD: "app-password",
+      },
+    );
+
     expect(result.id).toBe("bluesky");
   });
 
