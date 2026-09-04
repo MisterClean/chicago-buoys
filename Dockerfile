@@ -7,7 +7,8 @@ FROM ${NODE_IMAGE} AS build
 WORKDIR /build
 
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN --mount=type=cache,id=chicago-lake-pulse-npm-build,target=/root/.npm,sharing=locked \
+    npm ci
 
 COPY tsconfig.json ./
 COPY src ./src
@@ -19,7 +20,7 @@ FROM ${NODE_IMAGE} AS production-dependencies
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm \
+RUN --mount=type=cache,id=chicago-lake-pulse-npm-production,target=/root/.npm,sharing=locked \
     npm ci --omit=dev && \
     npm cache clean --force
 
