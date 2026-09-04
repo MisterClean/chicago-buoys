@@ -1,12 +1,12 @@
 import type { AppConfig } from "../config/schema.js";
 import { Logger } from "../core/log.js";
-import { LakePulseDatabase } from "../db/database.js";
+import { ChicagoBuoysDatabase } from "../db/database.js";
 import type { CanonicalPost, Publisher, PublishReceipt } from "../domain/types.js";
 
 export class PublishingService {
   public constructor(
     private readonly config: AppConfig,
-    private readonly database: LakePulseDatabase,
+    private readonly database: ChicagoBuoysDatabase,
     private readonly publishers: Publisher[],
     private readonly logger: Logger,
   ) {}

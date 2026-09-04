@@ -1,0 +1,9 @@
+[Unit]
+Description=Check Chicago Buoys health
+After=chicago-buoys.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/check-chicago-buoys
+Nice=19
+IOSchedulingClass=idle

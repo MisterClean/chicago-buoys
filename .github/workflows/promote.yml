@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE_NAME: ghcr.io/misterclean/chicago-lake-pulse
+  IMAGE_NAME: ghcr.io/misterclean/chicago-buoys
 
 jobs:
   promote:

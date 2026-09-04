@@ -1,6 +1,6 @@
 app:
   mode: shadow
-  databasePath: ./var/chicago-lake-pulse.sqlite
+  databasePath: ./var/chicago-buoys.sqlite
   logLevel: info
 
 posting:
@@ -15,9 +15,9 @@ publishers:
     kind: bluesky
     enabled: false
     serviceUrl: https://bsky.social
-    handleEnv: LAKE_PULSE_BLUESKY_HANDLE
-    appPasswordEnv: LAKE_PULSE_BLUESKY_APP_PASSWORD
-    expectedDidEnv: LAKE_PULSE_BLUESKY_DID
+    handleEnv: CHICAGO_BUOYS_BLUESKY_HANDLE
+    appPasswordEnv: CHICAGO_BUOYS_BLUESKY_APP_PASSWORD
+    expectedDidEnv: CHICAGO_BUOYS_BLUESKY_DID
     sessionPath: ./var/bluesky-session.json
 
 stations:

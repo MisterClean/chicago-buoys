@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE_NAME: ghcr.io/misterclean/chicago-lake-pulse
+  IMAGE_NAME: ghcr.io/misterclean/chicago-buoys
 
 jobs:
   publish:
@@ -49,7 +49,7 @@ jobs:
         with:
           context: .
           load: true
-          tags: chicago-lake-pulse:release-check
+          tags: chicago-buoys:release-check
           build-args: |
             VCS_REF=${{ github.sha }}
             VERSION=sha-${{ github.sha }}
@@ -63,7 +63,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           readonly maximum_bytes=100000000
-          image_bytes="$(docker image inspect chicago-lake-pulse:release-check --format '{{.Size}}')"
+          image_bytes="$(docker image inspect chicago-buoys:release-check --format '{{.Size}}')"
           printf 'Runtime image size: %s bytes\n' "$image_bytes"
           if ((image_bytes > maximum_bytes)); then
             printf 'Image exceeds the %s-byte ceiling\n' "$maximum_bytes" >&2
@@ -72,7 +72,7 @@ jobs:
 
       - name: Exercise compiled runtime modules
         run: >-
-          docker run --rm --network none --entrypoint node chicago-lake-pulse:release-check
+          docker run --rm --network none --entrypoint node chicago-buoys:release-check
           --input-type=module --eval
           "if (!process.versions.node.startsWith('24.')) throw new Error('Node 24 is required');
           await import('node:sqlite');
@@ -94,7 +94,7 @@ jobs:
           tags: |
             type=sha,format=long
           labels: |
-            org.opencontainers.image.source=https://github.com/misterclean/chicago-lake-pulse
+            org.opencontainers.image.source=https://github.com/misterclean/chicago-buoys
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Build and publish immutable candidate

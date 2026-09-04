@@ -6,16 +6,16 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { AppConfig } from "../../src/config/schema.js";
 import { Logger } from "../../src/core/log.js";
-import { LakePulseDatabase } from "../../src/db/database.js";
+import { ChicagoBuoysDatabase } from "../../src/db/database.js";
 import type { CanonicalPost, Publisher, PublishReceipt } from "../../src/domain/types.js";
 import { PublishingService } from "../../src/publishing/service.js";
 
 const temporaryDirectories: string[] = [];
 
-function openDatabase(): LakePulseDatabase {
-  const directory = mkdtempSync(path.join(tmpdir(), "lake-pulse-publishing-test-"));
+function openDatabase(): ChicagoBuoysDatabase {
+  const directory = mkdtempSync(path.join(tmpdir(), "chicago-buoys-publishing-test-"));
   temporaryDirectories.push(directory);
-  return new LakePulseDatabase(path.join(directory, "test.sqlite"));
+  return new ChicagoBuoysDatabase(path.join(directory, "test.sqlite"));
 }
 
 const config = {

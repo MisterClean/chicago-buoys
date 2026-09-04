@@ -617,7 +617,7 @@ export class BlueskyPublisher implements Publisher {
     const start = await this.videoService.startUpload(
       {
         mimeType: "video/mp4",
-        name: `lake-pulse-${recordKey(idempotencyKey).slice(0, 16)}.mp4`,
+        name: `chicago-buoys-${recordKey(idempotencyKey).slice(0, 16)}.mp4`,
         sizeBytes: media.bytes.byteLength,
       },
       initialToken,

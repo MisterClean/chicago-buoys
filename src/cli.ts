@@ -6,7 +6,7 @@ import { pollStations, runBrief, runCamera, runDoctor, runThermal, runTick } fro
 import { loadConfig } from "./config/load.js";
 import type { AppConfig } from "./config/schema.js";
 import { Logger } from "./core/log.js";
-import { LakePulseDatabase } from "./db/database.js";
+import { ChicagoBuoysDatabase } from "./db/database.js";
 import type { Publisher } from "./domain/types.js";
 import { createBlueskyPublisher } from "./publishers/bluesky.js";
 
@@ -40,7 +40,7 @@ export function parseCli(args: string[], environment: NodeJS.ProcessEnv = proces
   }
   const options: CliOptions = {
     command,
-    configPath: environment.LAKE_PULSE_CONFIG ?? "config.yaml",
+    configPath: environment.CHICAGO_BUOYS_CONFIG ?? "config.yaml",
     dryRun: false,
     offline: false,
     lane: "morning",
@@ -120,7 +120,7 @@ async function main(): Promise<void> {
   const options = parseCli(process.argv.slice(2));
   const config = runtimeConfig(await loadConfig(options.configPath), options);
   const logger = new Logger(config.app.logLevel);
-  const database = new LakePulseDatabase(config.app.databasePath);
+  const database = new ChicagoBuoysDatabase(config.app.databasePath);
   const runId = database.startRun(options.command);
   const runtimeOptions = {
     dryRun: config.app.mode === "shadow",

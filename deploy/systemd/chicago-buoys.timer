@@ -1,12 +1,12 @@
 [Unit]
-Description=Poll and publish Chicago Lake Pulse
+Description=Poll and publish Chicago Buoys
 
 [Timer]
 OnCalendar=*-*-* *:04/10:00 UTC
 Persistent=true
 RandomizedDelaySec=45s
 AccuracySec=15s
-Unit=chicago-lake-pulse.service
+Unit=chicago-buoys.service
 
 [Install]
 WantedBy=timers.target

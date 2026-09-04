@@ -42,7 +42,7 @@ export type RunRecord = {
   error?: string;
 };
 
-export class LakePulseDatabase {
+export class ChicagoBuoysDatabase {
   private readonly database: DatabaseSync;
 
   public constructor(

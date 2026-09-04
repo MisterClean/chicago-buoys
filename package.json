@@ -1,14 +1,14 @@
 {
-  "name": "chicago-lake-pulse",
+  "name": "chicago-buoys",
   "version": "0.1.0",
   "description": "A lightweight, source-backed buoy observation bot for Bluesky and future social publishers.",
-  "homepage": "https://github.com/MisterClean/chicago-lake-pulse#readme",
+  "homepage": "https://github.com/MisterClean/chicago-buoys#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MisterClean/chicago-lake-pulse.git"
+    "url": "git+https://github.com/MisterClean/chicago-buoys.git"
   },
   "bugs": {
-    "url": "https://github.com/MisterClean/chicago-lake-pulse/issues"
+    "url": "https://github.com/MisterClean/chicago-buoys/issues"
   },
   "type": "module",
   "private": false,

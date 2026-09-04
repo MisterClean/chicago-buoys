@@ -26,8 +26,8 @@ const videoBlob = { mimeType: "video/mp4", size: 20 } as BlobRef;
 const fixedDate = new Date("2026-09-04T15:00:00.000Z");
 
 class FakeClient implements BlueskyClientPort {
-  public readonly did = "did:plc:lake-pulse";
-  public readonly handle = "lake-pulse.test";
+  public readonly did = "did:plc:chicago-buoys";
+  public readonly handle = "chicago-buoys.test";
   public readonly dispatchUrl = new URL("https://pds.example.com");
   public readonly authRequests: ServiceAuthRequest[] = [];
   public readonly blobUploads: Array<{ bytes: Uint8Array; mimeType: string }> = [];
@@ -124,7 +124,7 @@ class FakeVideoService implements VideoServicePort {
     return Promise.resolve({
       completedJobId: "processing-job",
       jobStatus: {
-        did: "did:plc:lake-pulse",
+        did: "did:plc:chicago-buoys",
         jobId: "processing-job",
         state: "JOB_STATE_ENCODING",
       },
@@ -151,7 +151,7 @@ function publisher(client: FakeClient, videoService: VideoServicePort = new Fake
   return new BlueskyPublisher(
     {
       appPassword: "never-used",
-      handle: "lake-pulse.test",
+      handle: "chicago-buoys.test",
       id: "bluesky",
       partRetryAttempts: 2,
       serviceUrl: "https://bsky.social",
@@ -486,9 +486,9 @@ describe("createBlueskyPublisher", () => {
 
   it("resolves secrets from named environment variables", () => {
     const result = createBlueskyPublisher(config, {
-      BOT_HANDLE: "lake-pulse.test",
+      BOT_HANDLE: "chicago-buoys.test",
       BOT_PASSWORD: "app-password",
-      BOT_DID: "did:plc:lake-pulse",
+      BOT_DID: "did:plc:chicago-buoys",
     });
     expect(result.id).toBe("bluesky");
   });
@@ -496,8 +496,8 @@ describe("createBlueskyPublisher", () => {
   it("reports a missing variable by name without including another secret", () => {
     expect(() =>
       createBlueskyPublisher(config, {
-        BOT_DID: "did:plc:lake-pulse",
-        BOT_HANDLE: "lake-pulse.test",
+        BOT_DID: "did:plc:chicago-buoys",
+        BOT_HANDLE: "chicago-buoys.test",
       }),
     ).toThrow("BOT_PASSWORD");
   });
@@ -505,7 +505,7 @@ describe("createBlueskyPublisher", () => {
   it("requires the configured account DID without revealing its value", () => {
     expect(() =>
       createBlueskyPublisher(config, {
-        BOT_HANDLE: "lake-pulse.test",
+        BOT_HANDLE: "chicago-buoys.test",
         BOT_PASSWORD: "app-password",
       }),
     ).toThrow("BOT_DID");

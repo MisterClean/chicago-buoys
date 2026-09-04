@@ -1,6 +1,6 @@
-# Chicago Lake Pulse
+# Chicago Buoys
 
-Chicago Lake Pulse is a small, source-backed social bot for Great Lakes buoy observations. It turns quality-controlled measurements into concise lake briefs, temperature-profile stories, sparse event posts, and—only when redistribution permission is documented—recent buoy-camera clips.
+Chicago Buoys is a small, source-backed social bot for Great Lakes buoy observations. It turns quality-controlled measurements into concise lake briefs, temperature-profile stories, sparse event posts, and—only when redistribution permission is documented—recent buoy-camera clips.
 
 The codebase is station- and publisher-agnostic. Chicago buoy 45198 is the example configuration, and Bluesky is the first publisher adapter.
 
@@ -83,7 +83,7 @@ Common options:
 --lane morning|afternoon
 ```
 
-The `LAKE_PULSE_CONFIG` and `DATABASE_PATH` environment variables provide runtime defaults.
+The `CHICAGO_BUOYS_CONFIG` and `DATABASE_PATH` environment variables provide runtime defaults.
 
 ## Configuration and secrets
 
@@ -94,9 +94,9 @@ publishers:
   - id: primary-bluesky
     kind: bluesky
     enabled: false
-    handleEnv: LAKE_PULSE_BLUESKY_HANDLE
-    appPasswordEnv: LAKE_PULSE_BLUESKY_APP_PASSWORD
-    expectedDidEnv: LAKE_PULSE_BLUESKY_DID
+    handleEnv: CHICAGO_BUOYS_BLUESKY_HANDLE
+    appPasswordEnv: CHICAGO_BUOYS_BLUESKY_APP_PASSWORD
+    expectedDidEnv: CHICAGO_BUOYS_BLUESKY_DID
     sessionPath: ./var/bluesky-session.json
 ```
 

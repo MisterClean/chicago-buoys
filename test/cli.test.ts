@@ -4,7 +4,7 @@ import { parseCli } from "../src/cli.js";
 
 describe("CLI parsing", () => {
   it("defaults to tick and the configured environment path", () => {
-    expect(parseCli([], { LAKE_PULSE_CONFIG: "/tmp/example.yaml" })).toMatchObject({
+    expect(parseCli([], { CHICAGO_BUOYS_CONFIG: "/tmp/example.yaml" })).toMatchObject({
       command: "tick",
       configPath: "/tmp/example.yaml",
     });

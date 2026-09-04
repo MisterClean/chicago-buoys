@@ -8,7 +8,7 @@ FROM ${BUILD_IMAGE} AS build
 WORKDIR /build
 
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,id=chicago-lake-pulse-npm-build,target=/root/.npm,sharing=locked \
+RUN --mount=type=cache,id=chicago-buoys-npm-build,target=/root/.npm,sharing=locked \
     npm ci
 
 COPY tsconfig.json ./
@@ -55,9 +55,9 @@ FROM ${RUNTIME_IMAGE} AS runtime
 ARG VCS_REF
 ARG VERSION=development
 
-LABEL org.opencontainers.image.title="Chicago Lake Pulse" \
+LABEL org.opencontainers.image.title="Chicago Buoys" \
       org.opencontainers.image.description="A lightweight, source-backed lake observation bot" \
-      org.opencontainers.image.source="https://github.com/misterclean/chicago-lake-pulse" \
+      org.opencontainers.image.source="https://github.com/misterclean/chicago-buoys" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.licenses="MIT"

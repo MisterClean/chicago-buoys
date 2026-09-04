@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly BOT_TIMER="chicago-lake-pulse.timer"
-readonly CONTAINER_NAME="chicago-lake-pulse"
-readonly ENV_FILE="/etc/chicago-lake-pulse.env"
-readonly IMAGE_ENV_FILE="/etc/chicago-lake-pulse-image.env"
-readonly CONFIG_FILE="/etc/chicago-lake-pulse/config.yaml"
-readonly STATE_DIRECTORY="/var/lib/chicago-lake-pulse"
-readonly DATABASE_PATH="${STATE_DIRECTORY}/pulse.sqlite"
+readonly BOT_TIMER="chicago-buoys.timer"
+readonly CONTAINER_NAME="chicago-buoys"
+readonly ENV_FILE="/etc/chicago-buoys.env"
+readonly IMAGE_ENV_FILE="/etc/chicago-buoys-image.env"
+readonly CONFIG_FILE="/etc/chicago-buoys/config.yaml"
+readonly STATE_DIRECTORY="/var/lib/chicago-buoys"
+readonly DATABASE_PATH="${STATE_DIRECTORY}/chicago-buoys.sqlite"
 readonly MAX_SUCCESS_AGE_SECONDS=$((35 * 60))
 readonly MAX_CONTAINER_AGE_SECONDS=$((10 * 60))
 readonly MAX_DATABASE_BYTES=$((250 * 1024 * 1024))
@@ -51,14 +51,14 @@ state_mode="$(stat --format='%a' "$STATE_DIRECTORY")"
 systemctl is-active --quiet "$BOT_TIMER" || fail "${BOT_TIMER} is not active"
 
 image_ref="$({
-  awk -F= '$1 == "CHICAGO_LAKE_PULSE_IMAGE" {
-    sub(/^CHICAGO_LAKE_PULSE_IMAGE=/, "")
+  awk -F= '$1 == "CHICAGO_BUOYS_IMAGE" {
+    sub(/^CHICAGO_BUOYS_IMAGE=/, "")
     print
     exit
   }' "$IMAGE_ENV_FILE"
 })"
-[[ "$image_ref" =~ ^ghcr\.io/misterclean/chicago-lake-pulse@sha256:[0-9a-f]{64}$ ]] ||
-  fail "Image pointer is not an immutable Chicago Lake Pulse digest"
+[[ "$image_ref" =~ ^ghcr\.io/misterclean/chicago-buoys@sha256:[0-9a-f]{64}$ ]] ||
+  fail "Image pointer is not an immutable Chicago Buoys digest"
 docker image inspect "$image_ref" >/dev/null || fail "Selected image is not present locally: ${image_ref}"
 
 integrity="$(sqlite3 -readonly "$DATABASE_PATH" 'PRAGMA quick_check;')"

@@ -1,6 +1,6 @@
 # Deployment
 
-Chicago Lake Pulse is deployed as a short-lived, non-root container launched by systemd. There is no resident application server and no source checkout on the host. GitHub Actions builds an immutable `linux/amd64` image, a manual workflow promotes it, and the Lightsail host resolves the promoted tag to a digest before deployment.
+Chicago Buoys is deployed as a short-lived, non-root container launched by systemd. There is no resident application server and no source checkout on the host. GitHub Actions builds an immutable `linux/amd64` image, a manual workflow promotes it, and the Lightsail host resolves the promoted tag to a digest before deployment.
 
 Publishing is disabled by default in both `config.example.yaml` and the example host environment. A deployment does not implicitly make the bot live.
 
@@ -9,27 +9,27 @@ Publishing is disabled by default in both `config.example.yaml` and the example 
 The deployment uses these host paths:
 
 ```text
-/etc/chicago-lake-pulse.env
-/etc/chicago-lake-pulse-image.env
-/etc/chicago-lake-pulse/config.yaml
-/var/lib/chicago-lake-pulse/
-  pulse.sqlite
-  pulse.sqlite-wal
-  pulse.sqlite-shm
+/etc/chicago-buoys.env
+/etc/chicago-buoys-image.env
+/etc/chicago-buoys/config.yaml
+/var/lib/chicago-buoys/
+  chicago-buoys.sqlite
+  chicago-buoys.sqlite-wal
+  chicago-buoys.sqlite-shm
   bluesky-session.json
   deploy-backups/
   deploy-shadow/
   deployments/
 ```
 
-`/etc/chicago-lake-pulse.env` contains account-specific environment variables and must be `root:root` mode `0600`. `/etc/chicago-lake-pulse-image.env` is managed by the deployer and points to an immutable GHCR digest. `/etc/chicago-lake-pulse/config.yaml` is readable inside the container and should be `root:root` mode `0644`. The state directory is `1000:1000` mode `0700`, matching the unprivileged `node` user in the image.
+`/etc/chicago-buoys.env` contains account-specific environment variables and must be `root:root` mode `0600`. `/etc/chicago-buoys-image.env` is managed by the deployer and points to an immutable GHCR digest. `/etc/chicago-buoys/config.yaml` is readable inside the container and should be `root:root` mode `0644`. The state directory is `1000:1000` mode `0700`, matching the unprivileged `node` user in the image.
 
 The checked-in config is safe for an initial deployment. Before installing it on the host, change these paths:
 
 ```yaml
 app:
   mode: shadow
-  databasePath: /state/pulse.sqlite
+  databasePath: /state/chicago-buoys.sqlite
 
 publishers:
   - id: primary-bluesky
@@ -51,30 +51,30 @@ The GHCR package must be public for the tokenless host deployer. The deployer de
 Install the host files from a trusted checkout:
 
 ```bash
-sudo install -d -m 0700 -o 1000 -g 1000 /var/lib/chicago-lake-pulse
-sudo install -d -m 0755 -o root -g root /etc/chicago-lake-pulse
-sudo install -m 0644 -o root -g root config.example.yaml /etc/chicago-lake-pulse/config.yaml
-sudo install -m 0600 -o root -g root deploy/examples/chicago-lake-pulse.env /etc/chicago-lake-pulse.env
+sudo install -d -m 0700 -o 1000 -g 1000 /var/lib/chicago-buoys
+sudo install -d -m 0755 -o root -g root /etc/chicago-buoys
+sudo install -m 0644 -o root -g root config.example.yaml /etc/chicago-buoys/config.yaml
+sudo install -m 0600 -o root -g root deploy/examples/chicago-buoys.env /etc/chicago-buoys.env
 
-sudo install -m 0755 -o root -g root deploy/bin/deploy-chicago-lake-pulse /usr/local/sbin/deploy-chicago-lake-pulse
-sudo install -m 0755 -o root -g root deploy/bin/check-chicago-lake-pulse /usr/local/sbin/check-chicago-lake-pulse
+sudo install -m 0755 -o root -g root deploy/bin/deploy-chicago-buoys /usr/local/sbin/deploy-chicago-buoys
+sudo install -m 0755 -o root -g root deploy/bin/check-chicago-buoys /usr/local/sbin/check-chicago-buoys
 sudo install -m 0644 -o root -g root deploy/systemd/* /etc/systemd/system/
 ```
 
-Edit the installed config to use the `/state` paths shown above. Fill the Bluesky handle, account DID, and app password only in `/etc/chicago-lake-pulse.env`; do not put them in the repository, image, unit files, shell history, or GitHub Actions variables. The publisher checks both the handle and immutable DID before uploading or writing anything.
+Edit the installed config to use the `/state` paths shown above. Fill the Bluesky handle, account DID, and app password only in `/etc/chicago-buoys.env`; do not put them in the repository, image, unit files, shell history, or GitHub Actions variables. The publisher checks both the handle and immutable DID before uploading or writing anything.
 
 Validate and load the unit files:
 
 ```bash
-sudo systemd-analyze verify /etc/systemd/system/chicago-lake-pulse*.service /etc/systemd/system/chicago-lake-pulse*.timer
+sudo systemd-analyze verify /etc/systemd/system/chicago-buoys*.service /etc/systemd/system/chicago-buoys*.timer
 sudo systemctl daemon-reload
-sudo systemctl enable --now chicago-lake-pulse.timer chicago-lake-pulse-deploy.timer
+sudo systemctl enable --now chicago-buoys.timer chicago-buoys-deploy.timer
 ```
 
-The main timer safely skips runs until the deployer creates `/etc/chicago-lake-pulse-image.env`. Enable the health timer only after the first successful tick has created and populated the database:
+The main timer safely skips runs until the deployer creates `/etc/chicago-buoys-image.env`. Enable the health timer only after the first successful tick has created and populated the database:
 
 ```bash
-sudo systemctl enable --now chicago-lake-pulse-health.timer
+sudo systemctl enable --now chicago-buoys-health.timer
 ```
 
 ## Schedules and limits
@@ -100,7 +100,7 @@ The current camera clip is well below the recommended 25 MB ceiling. The current
 `.github/workflows/publish.yml` runs after a push to `main`. It repeats the checks and publishes only an immutable tag of the form:
 
 ```text
-ghcr.io/misterclean/chicago-lake-pulse:sha-<full-commit-sha>
+ghcr.io/misterclean/chicago-buoys:sha-<full-commit-sha>
 ```
 
 The image includes OCI source and revision labels plus provenance and an SBOM. Its Node 24 Alpine base is pinned to an immutable digest in the Dockerfile. It is not production merely because it was pushed.
@@ -125,7 +125,7 @@ The production database remains expanded during a code rollback, so migrations m
 To deploy a known digest without waiting for the polling timer:
 
 ```bash
-sudo /usr/local/sbin/deploy-chicago-lake-pulse --digest sha256:<64-hex-character-digest>
+sudo /usr/local/sbin/deploy-chicago-buoys --digest sha256:<64-hex-character-digest>
 ```
 
 ## Shadow validation and going live
@@ -133,11 +133,11 @@ sudo /usr/local/sbin/deploy-chicago-lake-pulse --digest sha256:<64-hex-character
 Keep the installed config in `app.mode: shadow` with the publisher disabled for the initial validation period. Inspect generated intents, source freshness, and logs:
 
 ```bash
-sudo systemctl start chicago-lake-pulse.service
-sudo journalctl -u chicago-lake-pulse.service --since today --no-pager
-sudo sqlite3 -readonly /var/lib/chicago-lake-pulse/pulse.sqlite \
+sudo systemctl start chicago-buoys.service
+sudo journalctl -u chicago-buoys.service --since today --no-pager
+sudo sqlite3 -readonly /var/lib/chicago-buoys/chicago-buoys.sqlite \
   "SELECT id, command, started_at, finished_at, status, error FROM runs ORDER BY id DESC LIMIT 20;"
-sudo sqlite3 -readonly /var/lib/chicago-lake-pulse/pulse.sqlite \
+sudo sqlite3 -readonly /var/lib/chicago-buoys/chicago-buoys.sqlite \
   "SELECT kind, status, created_at, error FROM publication_intents ORDER BY id DESC LIMIT 20;"
 ```
 
@@ -168,18 +168,18 @@ The hourly health check verifies:
 Useful commands:
 
 ```bash
-systemctl list-timers --all 'chicago-lake-pulse*'
-sudo systemctl status chicago-lake-pulse.service chicago-lake-pulse-deploy.service chicago-lake-pulse-health.service
-sudo journalctl -u chicago-lake-pulse.service -u chicago-lake-pulse-deploy.service -u chicago-lake-pulse-health.service --since today --no-pager
-sudo /usr/local/sbin/check-chicago-lake-pulse
+systemctl list-timers --all 'chicago-buoys*'
+sudo systemctl status chicago-buoys.service chicago-buoys-deploy.service chicago-buoys-health.service
+sudo journalctl -u chicago-buoys.service -u chicago-buoys-deploy.service -u chicago-buoys-health.service --since today --no-pager
+sudo /usr/local/sbin/check-chicago-buoys
 ```
 
-The deployer retains five SQLite deployment backups, twenty small deployment metadata files, the current image, and one rollback image. It removes only an exact superseded Chicago Lake Pulse image reference; it never performs a broad Docker prune.
+The deployer retains five SQLite deployment backups, twenty small deployment metadata files, the current image, and one rollback image. It removes only an exact superseded Chicago Buoys image reference; it never performs a broad Docker prune.
 
 Operational data should be retained for about 400 days unless longer backtesting is explicitly required. Use incremental auto-vacuum and periodic `PRAGMA optimize`; avoid frequent full `VACUUM`, which needs temporary disk space. Do not retain downloaded video.
 
 ## Rollback
 
-Each deployment metadata file in `/var/lib/chicago-lake-pulse/deployments` records `IMAGE`, `PREVIOUS_IMAGE`, and the corresponding database backup. To roll back code, stop the timer, atomically replace the image pointer with the recorded immutable previous image, start one service cycle, then restart the timer.
+Each deployment metadata file in `/var/lib/chicago-buoys/deployments` records `IMAGE`, `PREVIOUS_IMAGE`, and the corresponding database backup. To roll back code, stop the timer, atomically replace the image pointer with the recorded immutable previous image, start one service cycle, then restart the timer.
 
 Do not restore a database backup merely to roll back code: migrations are expand-only and the old code remains compatible. Restore a database only for confirmed corruption and only after checking whether posts were delivered after the backup, because reverting the publication ledger can allow duplicate posts.

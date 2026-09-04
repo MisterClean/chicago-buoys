@@ -11,12 +11,12 @@ const session: AtpSessionData = {
   accessJwt: "access-secret",
   active: true,
   did: "did:plc:test",
-  handle: "lake-pulse.test",
+  handle: "chicago-buoys.test",
   refreshJwt: "refresh-secret",
 };
 
 function temporarySessionPath(): { directory: string; path: string } {
-  const directory = mkdtempSync(join(tmpdir(), "lake-pulse-session-"));
+  const directory = mkdtempSync(join(tmpdir(), "chicago-buoys-session-"));
   return { directory, path: join(directory, "session.json") };
 }
 

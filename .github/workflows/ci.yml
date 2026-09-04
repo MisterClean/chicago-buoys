@@ -50,7 +50,7 @@ jobs:
         with:
           context: .
           load: true
-          tags: chicago-lake-pulse:ci
+          tags: chicago-buoys:ci
           build-args: |
             VCS_REF=${{ github.sha }}
             VERSION=ci-${{ github.sha }}
@@ -64,7 +64,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           readonly maximum_bytes=100000000
-          image_bytes="$(docker image inspect chicago-lake-pulse:ci --format '{{.Size}}')"
+          image_bytes="$(docker image inspect chicago-buoys:ci --format '{{.Size}}')"
           printf 'Runtime image size: %s bytes\n' "$image_bytes"
           if ((image_bytes > maximum_bytes)); then
             printf 'Image exceeds the %s-byte ceiling\n' "$maximum_bytes" >&2
@@ -73,7 +73,7 @@ jobs:
 
       - name: Exercise compiled runtime modules
         run: >-
-          docker run --rm --network none --entrypoint node chicago-lake-pulse:ci
+          docker run --rm --network none --entrypoint node chicago-buoys:ci
           --input-type=module --eval
           "if (!process.versions.node.startsWith('24.')) throw new Error('Node 24 is required');
           await import('node:sqlite');

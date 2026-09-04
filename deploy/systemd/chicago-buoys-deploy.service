@@ -1,0 +1,14 @@
+[Unit]
+Description=Deploy the promoted Chicago Buoys image
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/chicago-buoys.env
+ConditionPathExists=/etc/chicago-buoys/config.yaml
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/deploy-chicago-buoys
+TimeoutStartSec=20min
+Nice=15
+IOSchedulingClass=idle

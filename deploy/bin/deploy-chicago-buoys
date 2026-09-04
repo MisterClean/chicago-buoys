@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly IMAGE_REPOSITORY="ghcr.io/misterclean/chicago-lake-pulse"
-readonly REGISTRY_REPOSITORY="misterclean/chicago-lake-pulse"
-readonly EXPECTED_SOURCE="https://github.com/misterclean/chicago-lake-pulse"
+readonly IMAGE_REPOSITORY="ghcr.io/misterclean/chicago-buoys"
+readonly REGISTRY_REPOSITORY="misterclean/chicago-buoys"
+readonly EXPECTED_SOURCE="https://github.com/misterclean/chicago-buoys"
 readonly PRODUCTION_TAG="production"
-readonly BOT_SERVICE="chicago-lake-pulse.service"
-readonly BOT_TIMER="chicago-lake-pulse.timer"
-readonly ENV_FILE="/etc/chicago-lake-pulse.env"
-readonly IMAGE_ENV_FILE="/etc/chicago-lake-pulse-image.env"
-readonly CONFIG_FILE="/etc/chicago-lake-pulse/config.yaml"
-readonly STATE_DIRECTORY="/var/lib/chicago-lake-pulse"
-readonly DATABASE_PATH="${STATE_DIRECTORY}/pulse.sqlite"
+readonly BOT_SERVICE="chicago-buoys.service"
+readonly BOT_TIMER="chicago-buoys.timer"
+readonly ENV_FILE="/etc/chicago-buoys.env"
+readonly IMAGE_ENV_FILE="/etc/chicago-buoys-image.env"
+readonly CONFIG_FILE="/etc/chicago-buoys/config.yaml"
+readonly STATE_DIRECTORY="/var/lib/chicago-buoys"
+readonly DATABASE_PATH="${STATE_DIRECTORY}/chicago-buoys.sqlite"
 readonly BACKUP_DIRECTORY="${STATE_DIRECTORY}/deploy-backups"
 readonly SHADOW_DIRECTORY="${STATE_DIRECTORY}/deploy-shadow"
 readonly DEPLOYMENT_DIRECTORY="${STATE_DIRECTORY}/deployments"
-readonly LOCK_FILE="/run/lock/chicago-lake-pulse-deploy.lock"
+readonly LOCK_FILE="/run/lock/chicago-buoys-deploy.lock"
 readonly MINIMUM_FREE_BYTES=$((2 * 1024 * 1024 * 1024))
 readonly RETAINED_BACKUPS=5
 
@@ -83,7 +83,7 @@ done
 
 exec 9>"$LOCK_FILE"
 if ! flock --nonblock 9; then
-  log "Another Chicago Lake Pulse deployment is already running; exiting"
+  log "Another Chicago Buoys deployment is already running; exiting"
   exit 0
 fi
 
@@ -128,15 +128,15 @@ fi
 candidate_ref="${IMAGE_REPOSITORY}@${candidate_digest}"
 
 current_ref="$({
-  awk -F= '$1 == "CHICAGO_LAKE_PULSE_IMAGE" {
-    sub(/^CHICAGO_LAKE_PULSE_IMAGE=/, "")
+  awk -F= '$1 == "CHICAGO_BUOYS_IMAGE" {
+    sub(/^CHICAGO_BUOYS_IMAGE=/, "")
     print
     exit
   }' "$IMAGE_ENV_FILE" 2>/dev/null || true
 })"
 if [[ -n "$current_ref" &&
-      ! "$current_ref" =~ ^ghcr\.io/misterclean/chicago-lake-pulse@sha256:[0-9a-f]{64}$ ]]; then
-  fail "Existing image pointer is not an immutable Chicago Lake Pulse digest"
+      ! "$current_ref" =~ ^ghcr\.io/misterclean/chicago-buoys@sha256:[0-9a-f]{64}$ ]]; then
+  fail "Existing image pointer is not an immutable Chicago Buoys digest"
 fi
 if [[ "$current_ref" == "$candidate_ref" ]]; then
   log "Production already uses ${candidate_digest}"
@@ -252,7 +252,7 @@ run_candidate() {
     --env PUBLISH_ENABLED=false \
     --env CAMERA_PUBLISH_ENABLED=false \
     --env CONFIG_PATH=/app/config/runtime.yaml \
-    --env DATABASE_PATH=/state/pulse.sqlite \
+    --env DATABASE_PATH=/state/chicago-buoys.sqlite \
     --env BLUESKY_SESSION_PATH=/state/bluesky-session.json \
     --mount "type=bind,src=${CONFIG_FILE},dst=/app/config/runtime.yaml,readonly" \
     --mount "type=bind,src=${state_directory},dst=/state" \
@@ -282,7 +282,7 @@ write_image_pointer() {
   local image_ref=$1
 
   pointer_temp="$(mktemp "${IMAGE_ENV_FILE}.XXXXXX")"
-  printf 'CHICAGO_LAKE_PULSE_IMAGE=%s\n' "$image_ref" >"$pointer_temp"
+  printf 'CHICAGO_BUOYS_IMAGE=%s\n' "$image_ref" >"$pointer_temp"
   chown root:root "$pointer_temp"
   chmod 0600 "$pointer_temp"
   mv --force -- "$pointer_temp" "$IMAGE_ENV_FILE"
@@ -291,9 +291,9 @@ write_image_pointer() {
 
 log "Applying expand-only migrations to production state"
 run_candidate "$STATE_DIRECTORY" none \
-  migrate --config /app/config/runtime.yaml --database /state/pulse.sqlite --offline
+  migrate --config /app/config/runtime.yaml --database /state/chicago-buoys.sqlite --offline
 run_candidate "$STATE_DIRECTORY" none \
-  doctor --config /app/config/runtime.yaml --database /state/pulse.sqlite --offline
+  doctor --config /app/config/runtime.yaml --database /state/chicago-buoys.sqlite --offline
 
 previous_ref="$current_ref"
 write_image_pointer "$candidate_ref"
@@ -365,7 +365,7 @@ fi
 if [[ "$superseded_ref" =~ ^${IMAGE_REPOSITORY}@sha256:[0-9a-f]{64}$ &&
       "$superseded_ref" != "$candidate_ref" &&
       "$superseded_ref" != "$previous_ref" ]]; then
-  log "Removing superseded Chicago Lake Pulse image ${superseded_ref}"
+  log "Removing superseded Chicago Buoys image ${superseded_ref}"
   docker image rm "$superseded_ref" >/dev/null 2>&1 ||
     log "WARNING: Could not remove superseded image ${superseded_ref}"
 fi

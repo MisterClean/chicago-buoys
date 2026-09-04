@@ -3,15 +3,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { LakePulseDatabase } from "../../src/db/database.js";
+import { ChicagoBuoysDatabase } from "../../src/db/database.js";
 import type { CanonicalPost, NormalizedObservation } from "../../src/domain/types.js";
 
 const temporaryDirectories: string[] = [];
 
-function openDatabase(now?: () => Date): LakePulseDatabase {
-  const directory = mkdtempSync(path.join(tmpdir(), "lake-pulse-test-"));
+function openDatabase(now?: () => Date): ChicagoBuoysDatabase {
+  const directory = mkdtempSync(path.join(tmpdir(), "chicago-buoys-test-"));
   temporaryDirectories.push(directory);
-  return new LakePulseDatabase(path.join(directory, "test.sqlite"), now);
+  return new ChicagoBuoysDatabase(path.join(directory, "test.sqlite"), now);
 }
 
 function observation(observedAt = "2026-09-04T12:00:00.000Z"): NormalizedObservation {
@@ -48,7 +48,7 @@ afterEach(() => {
   }
 });
 
-describe("LakePulseDatabase", () => {
+describe("ChicagoBuoysDatabase", () => {
   it("stores observations idempotently and reads the latest", () => {
     const database = openDatabase();
     database.upsertObservation(observation());

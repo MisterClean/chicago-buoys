@@ -1,12 +1,12 @@
 [Unit]
-Description=Poll GHCR for promoted Chicago Lake Pulse images
+Description=Poll GHCR for promoted Chicago Buoys images
 
 [Timer]
 OnBootSec=4min
 OnUnitActiveSec=15min
 RandomizedDelaySec=2min
 AccuracySec=30s
-Unit=chicago-lake-pulse-deploy.service
+Unit=chicago-buoys-deploy.service
 
 [Install]
 WantedBy=timers.target

@@ -1,6 +1,6 @@
 import type { AppConfig, StationConfig } from "./config/schema.js";
 import { Logger } from "./core/log.js";
-import { LakePulseDatabase } from "./db/database.js";
+import { ChicagoBuoysDatabase } from "./db/database.js";
 import type { CanonicalPost, ObservationSource, Publisher } from "./domain/types.js";
 import { buildBrief, buildThermalProfilePost, type BriefLane } from "./editorial/brief.js";
 import { buildCameraPost, isCameraOpportunity } from "./editorial/camera.js";
@@ -54,7 +54,7 @@ function selectedStations(config: AppConfig, stationKey?: string): StationConfig
   return [station];
 }
 
-function beginningOfLookback(database: LakePulseDatabase, stationKey: string, now: Date): Date {
+function beginningOfLookback(database: ChicagoBuoysDatabase, stationKey: string, now: Date): Date {
   const latest = database.getLatestAcceptableObservation(stationKey);
   if (latest === undefined) {
     return new Date(now.getTime() - 48 * 60 * 60_000);
@@ -67,7 +67,7 @@ function beginningOfLookback(database: LakePulseDatabase, stationKey: string, no
 
 export async function pollStations(
   config: AppConfig,
-  database: LakePulseDatabase,
+  database: ChicagoBuoysDatabase,
   logger: Logger,
   options: RuntimeOptions,
 ): Promise<void> {
@@ -104,7 +104,7 @@ export async function pollStations(
 
 function publisherCapAllows(
   config: AppConfig,
-  database: LakePulseDatabase,
+  database: ChicagoBuoysDatabase,
   post: CanonicalPost,
   now: Date,
 ): boolean {
@@ -124,7 +124,7 @@ function publisherCapAllows(
 
 async function dispatchIfAllowed(
   config: AppConfig,
-  database: LakePulseDatabase,
+  database: ChicagoBuoysDatabase,
   publishing: PublishingService,
   logger: Logger,
   post: CanonicalPost,
@@ -156,7 +156,7 @@ function eventCooldownHours(kind: string): number {
 async function evaluateObservationPosts(
   config: AppConfig,
   station: StationConfig,
-  database: LakePulseDatabase,
+  database: ChicagoBuoysDatabase,
   publishing: PublishingService,
   logger: Logger,
   now: Date,
@@ -249,7 +249,7 @@ async function evaluateObservationPosts(
 async function evaluateCamera(
   config: AppConfig,
   station: StationConfig,
-  database: LakePulseDatabase,
+  database: ChicagoBuoysDatabase,
   publishing: PublishingService,
   logger: Logger,
   options: RuntimeOptions,
@@ -315,7 +315,7 @@ async function evaluateCamera(
 
 export async function runTick(
   config: AppConfig,
-  database: LakePulseDatabase,
+  database: ChicagoBuoysDatabase,
   publishers: Publisher[],
   logger: Logger,
   options: RuntimeOptions,
@@ -331,7 +331,7 @@ export async function runTick(
 
 export async function runBrief(
   config: AppConfig,
-  database: LakePulseDatabase,
+  database: ChicagoBuoysDatabase,
   publishers: Publisher[],
   logger: Logger,
   options: RuntimeOptions,
@@ -353,7 +353,7 @@ export async function runBrief(
 
 export async function runCamera(
   config: AppConfig,
-  database: LakePulseDatabase,
+  database: ChicagoBuoysDatabase,
   publishers: Publisher[],
   logger: Logger,
   options: RuntimeOptions,
@@ -366,7 +366,7 @@ export async function runCamera(
 
 export async function runThermal(
   config: AppConfig,
-  database: LakePulseDatabase,
+  database: ChicagoBuoysDatabase,
   publishers: Publisher[],
   logger: Logger,
   options: RuntimeOptions,
@@ -406,7 +406,7 @@ export async function runThermal(
 
 export async function runDoctor(
   config: AppConfig,
-  database: LakePulseDatabase,
+  database: ChicagoBuoysDatabase,
   logger: Logger,
   options: RuntimeOptions,
   offline: boolean,
