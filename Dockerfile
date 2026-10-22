@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
-ARG BUILD_IMAGE=node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
-ARG RUNTIME_IMAGE=alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+ARG BUILD_IMAGE=node:24.22.1-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
+ARG RUNTIME_IMAGE=alpine:3.23@sha256:132c5416901054a60a6c1f9f5073fd16dc91c8f3de1693f6be93b5912cf3ee71
 
 FROM ${BUILD_IMAGE} AS build
 
@@ -62,11 +62,12 @@ LABEL org.opencontainers.image.title="Chicago Buoys" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.licenses="MIT"
 
-# Stay on Node 24 while accepting security revisions from Alpine's stable branch.
-# hadolint ignore=DL3018
-RUN apk add --no-cache 'nodejs~24' icu-data-en && \
+# Use the upstream security release: Alpine's nodejs package can lag disclosures.
+RUN apk upgrade --no-cache && \
+    apk add --no-cache libstdc++ libgcc ca-certificates && \
     addgroup -g 1000 node && \
     adduser -u 1000 -G node -s /bin/sh -D node
+COPY --from=build /usr/local/bin/node /usr/local/bin/node
 
 ENV HOME=/tmp \
     NODE_ENV=production \
