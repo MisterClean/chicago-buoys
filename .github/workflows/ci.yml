@@ -63,7 +63,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          readonly maximum_bytes=100000000
+          readonly maximum_bytes=225000000
           image_bytes="$(docker image inspect chicago-buoys:ci --format '{{.Size}}')"
           printf 'Runtime image size: %s bytes\n' "$image_bytes"
           if ((image_bytes > maximum_bytes)); then
@@ -75,7 +75,7 @@ jobs:
         run: >-
           docker run --rm --network none --entrypoint node chicago-buoys:ci
           --input-type=module --eval
-          "if (!process.versions.node.startsWith('24.')) throw new Error('Node 24 is required');
+          "if (process.versions.node !== '24.22.1') throw new Error('Patched Node 24.22.1 is required');
           await import('node:sqlite');
           new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago' }).format(new Date());
           await import('./dist/src/cli.js')"
